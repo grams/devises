@@ -47,8 +47,18 @@ test.describe("État persistant dans le hash de l'URL", () => {
   });
 
   test("un hash sans devise reconnue conserve la configuration par défaut", async ({ page }) => {
-    await page.goto("/#"); // hash vide -> parseHash ne change rien
+    await page.goto("/#"); // hash vide, rien en localStorage -> parseHash ne change rien
     await expect(page.locator("#rows .row")).toHaveCount(3);
     await expect(rowByCode(page, "eur")).toHaveClass(/base/);
+  });
+
+  test("un lancement sans hash (icône PWA installée) retombe sur la dernière sélection connue", async ({ page }) => {
+    await page.goto("/#usd,jpy,gbp");
+    await expect(page.locator("#rows .row")).toHaveCount(3);
+
+    await page.goto("/"); // simule le start_url fixe (sans hash) de l'icône installée
+    await expect(page.locator("#rows .row")).toHaveCount(3);
+    await expect(rowByCode(page, "usd")).toHaveClass(/base/);
+    await expect(page).toHaveURL(/#usd,jpy,gbp$/);
   });
 });

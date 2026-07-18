@@ -223,9 +223,16 @@ let expr = "";         // expression en cours de saisie (ex "45000*3")
 let committed = 0;     // dernier montant confirmé (au =, ou en changeant de ligne active) : sert aux conversions affichées
 
 /* ---------- Hash <-> état ---------- */
+// L'icône PWA installée ouvre toujours le start_url du manifest, sans hash :
+// on retombe alors sur la dernière sélection de devises connue (mémorisée
+// à chaque changement dans writeHash), plutôt que sur eur/usd/gbp par défaut.
+const CURR_KEY = "currencies";
 function parseHash(){
   const raw = decodeURIComponent(location.hash.replace(/^#/,"")).trim().toLowerCase();
-  const list = raw.split(/[,+\s]+/).filter(Boolean);
+  let list = raw.split(/[,+\s]+/).filter(Boolean);
+  if(!list.length){
+    try{ list = (localStorage.getItem(CURR_KEY)||"").split(",").filter(Boolean); }catch(e){}
+  }
   if(list.length){
     currencies = [...new Set(list)];
     base = currencies[0];
@@ -236,6 +243,7 @@ function parseHash(){
 function writeHash(){
   const h = "#" + currencies.join(",");
   if(location.hash !== h) history.replaceState(null, "", h);
+  try{ localStorage.setItem(CURR_KEY, currencies.join(",")); }catch(e){}
 }
 
 /* ---------- Cache local (offline) ---------- */
