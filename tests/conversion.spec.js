@@ -126,7 +126,7 @@ test.describe("Conversion entre devises", () => {
     await expect(amountOf(page, "eur")).not.toHaveText("0");
   });
 
-  test("continuer à taper après un changement de ligne active complète le montant affiché (ne l'efface pas)", async ({ page }) => {
+  test("le premier chiffre juste après un changement de ligne active remplace le montant reconverti", async ({ page }) => {
     await pressKeys(page, ["1", "0", "0"]);
     const eurUsd = crossRates("eur").usd;
     const converted = Math.round(100 * eurUsd * 1e6) / 1e6;
@@ -135,7 +135,37 @@ test.describe("Conversion entre devises", () => {
     await expect(amountOf(page, "usd")).toHaveText(prettyExpr(String(converted)));
 
     await pressKeys(page, ["5"]);
-    // Le nouveau chiffre complète le montant reconverti, il ne repart pas de zéro.
-    await expect(amountOf(page, "usd")).toHaveText(prettyExpr(String(converted) + "5"));
+    // Comme dans un champ resaisi : le premier chiffre remplace, il ne s'accole pas.
+    await expect(amountOf(page, "usd")).toHaveText("5");
+  });
+
+  test("après le premier chiffre, les chiffres suivants s'accolent normalement", async ({ page }) => {
+    await pressKeys(page, ["1", "0", "0"]);
+    await rowByCode(page, "usd").click();
+    await pressKeys(page, ["5"]);
+    await pressKeys(page, ["3"]);
+    await expect(amountOf(page, "usd")).toHaveText("53");
+  });
+
+  test("revenir sur une ligne déjà visitée réarme le remplacement au prochain chiffre", async ({ page }) => {
+    await pressKeys(page, ["8", "8"]);
+    await rowByCode(page, "usd").click();
+    await rowByCode(page, "eur").click(); // retour sur eur : le focus est de nouveau "frais"
+
+    await pressKeys(page, ["9"]);
+    await expect(amountOf(page, "eur")).toHaveText("9");
+
+    await pressKeys(page, ["5"]);
+    await expect(amountOf(page, "eur")).toHaveText("95");
+  });
+
+  test("un opérateur juste après un changement de ligne active continue depuis le montant reconverti (ne l'efface pas)", async ({ page }) => {
+    await pressKeys(page, ["8", "8"]);
+    await rowByCode(page, "usd").click();
+    await rowByCode(page, "eur").click();
+
+    await pressKeys(page, ["+"]);
+    await expect(amountOf(page, "eur")).not.toHaveText("0");
+    await expect(amountOf(page, "eur")).toContainText("+");
   });
 });

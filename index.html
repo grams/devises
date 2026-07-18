@@ -221,6 +221,8 @@ let rateDate = null;
 let fromCache = false;
 let expr = "";         // expression en cours de saisie (ex "45000*3")
 let committed = 0;     // dernier montant confirmé (au =, ou en changeant de ligne active) : sert aux conversions affichées
+let justFocused = true; // true tant qu'aucun chiffre n'a été tapé depuis le dernier changement de ligne active :
+                         // le premier chiffre remplace le montant reconverti au lieu de s'y accoler
 
 /* ---------- Hash <-> état ---------- */
 // L'icône PWA installée ouvre toujours le start_url du manifest, sans hash :
@@ -239,6 +241,7 @@ function parseHash(){
   }
   active = base;
   committed = 0;
+  justFocused = true;
 }
 function writeHash(){
   const h = "#" + currencies.join(",");
@@ -436,11 +439,20 @@ function setActive(code){
   active = code;
   committed = converted;
   expr = converted ? String(Math.round(converted*1e6)/1e6) : "";
+  justFocused = true;
   render();
 }
 
 /* ---------- Clavier ---------- */
 function press(k){
+  // Le premier chiffre saisi après un changement de ligne active remplace le
+  // montant reconverti au lieu de s'y accoler (comme un input qu'on resaisit).
+  // Un opérateur, en revanche, part volontairement de ce montant (continuité
+  // de calcul), donc ne déclenche pas ce remplacement.
+  const isDigitLike = /^[0-9]$/.test(k) || k==="." || k==="000";
+  if(justFocused && isDigitLike) expr = "";
+  justFocused = false;
+
   if(k==="C"){ expr=""; committed=0; }
   else if(k==="back"){ expr=expr.slice(0,-1); }
   else if(k==="eq"){
@@ -497,7 +509,7 @@ const sheet=document.getElementById("sheet"), sheetBg=document.getElementById("s
 function openSheet(){ renderPicked(); renderResults(""); sheet.classList.add("open"); sheetBg.classList.add("open"); }
 function closeSheet(){
   sheet.classList.remove("open"); sheetBg.classList.remove("open");
-  if(!currencies.includes(active)) active = base; // filet de sécurité si la devise active a été retirée
+  if(!currencies.includes(active)){ active = base; justFocused = true; } // filet de sécurité si la devise active a été retirée
   loadRates();
 }
 document.getElementById("manageBtn").addEventListener("click", openSheet);
@@ -515,7 +527,7 @@ function renderPicked(){
       ${isBase?'<span class="isbase">BASE</span>':'<button class="setbase">Base</button>'}
       ${isBase?'':'<button class="rm">Retirer</button>'}`;
     if(!isBase){
-      row.querySelector(".setbase").addEventListener("click", ()=>{ base=code; active=code; currencies=[base,...currencies.filter(c=>c!==base)]; renderPicked(); });
+      row.querySelector(".setbase").addEventListener("click", ()=>{ base=code; active=code; justFocused=true; currencies=[base,...currencies.filter(c=>c!==base)]; renderPicked(); });
       row.querySelector(".rm").addEventListener("click", ()=>{ currencies=currencies.filter(c=>c!==code); renderPicked(); });
     }
     el.appendChild(row);
