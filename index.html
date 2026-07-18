@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1A1E">
+<title>Devises</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --ink:#0F1A1E; --slate:#17272E; --home:#203843; --line:#2B424C;
+    --text:#ECF2F1; --muted:#7E969E; --gold:#F2B441; --danger:#E0736A;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--ink); color:var(--text); font-family:var(--sans);
+    display:flex; flex-direction:column; min-height:100dvh;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 18px 10px;
+  }
+  .brand{font-weight:700; letter-spacing:.14em; font-size:14px; text-transform:uppercase; color:var(--text)}
+  .brand b{color:var(--gold)}
+  .updated{font-size:11px; color:var(--muted); font-family:var(--mono)}
+
+  .rows{padding:6px 12px 0; display:flex; flex-direction:column; gap:8px}
+  .row{
+    position:relative; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px;
+    background:var(--slate); border:1px solid transparent; border-radius:14px;
+    padding:14px 16px; cursor:pointer; transition:background .12s;
+  }
+  .row:active{background:#1c2f37}
+  .row.base{background:var(--home); border-color:var(--line); padding-left:18px}
+  .row.base::before{content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px; border-radius:3px; background:var(--gold)}
+  .flag{font-size:26px; line-height:1; width:34px; text-align:center}
+  .badge{font-size:12px; font-weight:700; font-family:var(--mono); width:34px; height:26px; display:flex; align-items:center; justify-content:center; background:#0d1519; border:1px solid var(--line); border-radius:7px; color:var(--muted)}
+  .meta{min-width:0}
+  .code{font-weight:700; font-size:19px; letter-spacing:.02em; display:flex; align-items:center; gap:8px}
+  .tag{font-size:9px; font-weight:800; letter-spacing:.12em; color:var(--ink); background:var(--gold); padding:2px 5px; border-radius:4px}
+  .name{font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .amount{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:22px; text-align:right; font-weight:600; letter-spacing:-.01em}
+  .row.base .amount{color:var(--gold); font-size:24px}
+  .sub{font-family:var(--mono); font-size:10px; color:var(--muted); text-align:right; margin-top:2px}
+
+  .manage{margin:12px; padding:12px; background:transparent; border:1px dashed var(--line); color:var(--muted);
+    border-radius:12px; font-family:var(--sans); font-size:13px; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer}
+  .manage:active{background:var(--slate)}
+
+  .spacer{flex:1}
+
+  .pad{
+    margin-top:auto; padding:10px 10px calc(10px + env(safe-area-inset-bottom)); background:#0b1418;
+    border-top:1px solid var(--line);
+    display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+  }
+  .key{
+    border:none; background:var(--slate); color:var(--text); font-family:var(--mono);
+    font-size:24px; padding:16px 0; border-radius:12px; cursor:pointer; transition:background .1s;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .key:active{background:#22343c}
+  .key.op{color:var(--gold); font-size:22px}
+  .key.util{color:var(--muted)}
+  .key.clear{color:var(--danger)}
+  .key.eq{background:var(--gold); color:var(--ink); font-weight:700}
+  .key.eq:active{background:#e0a533}
+
+  .offline{font-family:var(--mono); font-size:11px; color:var(--gold)}
+
+  /* Sheet */
+  .sheet-bg{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:20}
+  .sheet-bg.open{display:block}
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:21; background:var(--slate);
+    border-radius:18px 18px 0 0; max-height:82dvh; display:none; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .sheet.open{display:flex}
+  .sheet h2{margin:0; padding:16px 18px 6px; font-size:16px}
+  .sheet .hint{padding:0 18px 8px; color:var(--muted); font-size:12px}
+  .picked{padding:6px 12px; display:flex; flex-direction:column; gap:6px; overflow:auto}
+  .pill{display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:10px; background:#0d1519; border:1px solid var(--line); border-radius:10px; padding:9px 12px}
+  .pill .pcode{font-weight:700; font-family:var(--mono)}
+  .pill .pname{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pill button{border:none; background:transparent; color:var(--muted); font-size:13px; padding:6px 8px; cursor:pointer; font-family:var(--sans)}
+  .pill .setbase{color:var(--gold)}
+  .pill .rm{color:var(--danger)}
+  .pill .isbase{color:var(--gold); font-size:10px; font-weight:800; letter-spacing:.1em}
+  .search{margin:10px 12px 6px}
+  .search input{width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line); background:#0d1519; color:var(--text); font-size:15px; font-family:var(--sans)}
+  .results{overflow:auto; padding:0 12px 14px; display:flex; flex-direction:column; gap:4px}
+  .result{display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:10px; cursor:pointer}
+  .result:active{background:#0d1519}
+  .result .rc{font-family:var(--mono); font-weight:700; width:52px}
+  .result .rn{font-size:13px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .done{margin:8px 12px 12px; padding:14px; text-align:center; background:var(--gold); color:var(--ink); font-weight:700; border-radius:12px; border:none; font-size:15px; cursor:pointer}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Dev<b>ises</b></div>
+    <div class="updated" id="updated">…</div>
+  </header>
+
+  <div class="rows" id="rows"></div>
+
+  <div class="manage" id="manageBtn">⇄ Gérer les devises</div>
+
+  <div class="spacer"></div>
+
+  <div class="pad" id="pad">
+    <button class="key clear" data-k="C">C</button>
+    <button class="key" data-k="7">7</button>
+    <button class="key" data-k="8">8</button>
+    <button class="key" data-k="9">9</button>
+
+    <button class="key op" data-k="/">÷</button>
+    <button class="key" data-k="4">4</button>
+    <button class="key" data-k="5">5</button>
+    <button class="key" data-k="6">6</button>
+
+    <button class="key op" data-k="*">×</button>
+    <button class="key" data-k="1">1</button>
+    <button class="key" data-k="2">2</button>
+    <button class="key" data-k="3">3</button>
+
+    <button class="key op" data-k="-">−</button>
+    <button class="key op" data-k="+">+</button>
+    <button class="key" data-k="0">0</button>
+    <button class="key util" data-k=".">,</button>
+
+    <button class="key util" data-k="back" style="grid-column:span 2">⌫</button>
+    <button class="key eq" data-k="eq" style="grid-column:span 2">=</button>
+  </div>
+
+  <!-- Manage sheet -->
+  <div class="sheet-bg" id="sheetBg"></div>
+  <div class="sheet" id="sheet">
+    <h2>Gérer les devises</h2>
+    <div class="hint">Tape sur « Base » pour choisir la devise dans laquelle tu saisis.</div>
+    <div class="picked" id="picked"></div>
+    <div class="search"><input id="search" placeholder="Ajouter une devise…" autocomplete="off"></div>
+    <div class="results" id="results"></div>
+    <button class="done" id="doneBtn">Terminé</button>
+  </div>
+
+<script>
+"use strict";
+
+/* ---------- Sources & fallback (recommandé par l'auteur de l'API) ---------- */
+const BASES = [
+  d => `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${d}/v1`,
+  d => `https://${d}.currency-api.pages.dev/v1`,
+];
+async function fetchJson(pathFn){
+  // pathFn(baseUrl) -> full url ; on essaie min puis non-min, jsDelivr puis pages.dev
+  const dates = ["latest"];
+  for(const date of dates){
+    for(const b of BASES){
+      const root = b(date);
+      for(const url of [pathFn(root,true), pathFn(root,false)]){
+        try{
+          const r = await fetch(url, {cache:"no-store"});
+          if(r.ok) return await r.json();
+        }catch(e){/* try next */}
+      }
+    }
+  }
+  throw new Error("unreachable");
+}
+
+/* ---------- Currency -> country ISO2 (drapeaux emoji) ---------- */
+const ISO = {
+  eur:"eu",usd:"us",gbp:"gb",jpy:"jp",chf:"ch",cad:"ca",aud:"au",nzd:"nz",
+  cny:"cn",hkd:"hk",twd:"tw",krw:"kr",sgd:"sg",myr:"my",idr:"id",php:"ph",
+  thb:"th",vnd:"vn",khr:"kh",lak:"la",mmk:"mm",inr:"in",lkr:"lk",npr:"np",
+  pkr:"pk",bdt:"bd",aed:"ae",sar:"sa",qar:"qa",ils:"il",try:"tr",egp:"eg",
+  zar:"za",mad:"ma",tnd:"tn",ngn:"ng",kes:"ke",rub:"ru",uah:"ua",pln:"pl",
+  czk:"cz",huf:"hu",ron:"ro",bgn:"bg",sek:"se",nok:"no",dkk:"dk",isk:"is",
+  brl:"br",mxn:"mx",ars:"ar",clp:"cl",cop:"co",pen:"pe",uyu:"uy",
+};
+function flag(code){
+  const cc = ISO[code];
+  if(!cc) return null;
+  return cc.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
+}
+
+/* ---------- État ---------- */
+let base = "eur";
+let currencies = ["eur","usd","gbp"];   // [0] = base
+let rates = {};        // { vnd: 28000, ... } depuis la base
+let names = {};        // { eur:"Euro", ... }
+let rateDate = null;
+let fromCache = false;
+let expr = "";         // expression saisie (ex "45000*3")
+
+/* ---------- Hash <-> état ---------- */
+function parseHash(){
+  const raw = decodeURIComponent(location.hash.replace(/^#/,"")).trim().toLowerCase();
+  const list = raw.split(/[,+\s]+/).filter(Boolean);
+  if(list.length){
+    currencies = [...new Set(list)];
+    base = currencies[0];
+  }
+}
+function writeHash(){
+  const h = "#" + currencies.join(",");
+  if(location.hash !== h) history.replaceState(null, "", h);
+}
+
+/* ---------- Cache local (offline) ---------- */
+const CK = b => "rates:"+b;
+function saveCache(){
+  try{ localStorage.setItem(CK(base), JSON.stringify({rates, date:rateDate, at:Date.now()})); }catch(e){}
+}
+function loadCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem(CK(base))||"null");
+    if(c){ rates = c.rates; rateDate = c.date; fromCache = true; return true; }
+  }catch(e){}
+  return false;
+}
+
+/* ---------- Chargement des taux & noms ---------- */
+async function loadNames(){
+  if(Object.keys(names).length) return;
+  try{
+    const cached = JSON.parse(localStorage.getItem("names")||"null");
+    if(cached){ names = cached; }
+  }catch(e){}
+  try{
+    const j = await fetchJson((root,min)=>`${root}/currencies.${min?"min.":""}json`);
+    names = j; localStorage.setItem("names", JSON.stringify(j));
+  }catch(e){/* garde le cache si dispo */}
+}
+async function loadRates(){
+  const hadCache = loadCache();     // affiche vite si dispo
+  if(hadCache) render();
+  try{
+    const j = await fetchJson((root,min)=>`${root}/currencies/${base}.${min?"min.":""}json`);
+    rates = j[base] || {};
+    rateDate = j.date || null;
+    fromCache = false;
+    saveCache();
+  }catch(e){
+    if(!hadCache){ rateDate = null; } // rien en cache et pas de réseau
+  }
+  render();
+}
+
+/* ---------- Calculatrice (évaluateur sûr, sans eval) ---------- */
+function evaluate(s){
+  s = s.replace(/[+\-*/.]$/,"");            // ignore un opérateur en attente
+  if(!s) return 0;
+  const toks = s.match(/(\d+\.?\d*|\.\d+|[+\-*/])/g);
+  if(!toks) return 0;
+  // shunting-yard -> RPN
+  const out=[], ops=[], prec={"+":1,"-":1,"*":2,"/":2};
+  for(const t of toks){
+    if(/[0-9.]/.test(t)) out.push(parseFloat(t));
+    else{
+      while(ops.length && prec[ops.at(-1)]>=prec[t]) out.push(ops.pop());
+      ops.push(t);
+    }
+  }
+  while(ops.length) out.push(ops.pop());
+  const st=[];
+  for(const t of out){
+    if(typeof t==="number") st.push(t);
+    else{ const b2=st.pop(), a=st.pop();
+      st.push(t==="+"?a+b2 : t==="-"?a-b2 : t==="*"?a*b2 : b2===0?NaN:a/b2); }
+  }
+  const v = st.pop();
+  return isFinite(v)? v : 0;
+}
+function prettyExpr(s){
+  return (s||"0").replace(/\*/g,"×").replace(/\//g,"÷").replace(/-/g,"−").replace(/\./g,",");
+}
+
+/* ---------- Formatage ---------- */
+function fmt(n){
+  if(!isFinite(n)) return "—";
+  const a=Math.abs(n);
+  const d = a>=1000?0 : a>=1?2 : a>0?4 : 0;
+  return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:d}).format(n);
+}
+
+/* ---------- Rendu ---------- */
+function render(){
+  writeHash();
+  const value = evaluate(expr);
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = "";
+  currencies.forEach(code=>{
+    const isBase = code===base;
+    const row = document.createElement("div");
+    row.className = "row"+(isBase?" base":"");
+    const fl = flag(code);
+    const flagEl = fl ? `<div class="flag">${fl}</div>` : `<div class="badge">${code.slice(0,2).toUpperCase()}</div>`;
+    let amount;
+    if(isBase){
+      amount = prettyExpr(expr);
+    }else{
+      const r = rates[code];
+      amount = (r==null) ? "—" : fmt(value * r);
+    }
+    const nm = names[code] || "";
+    row.innerHTML = `
+      ${flagEl}
+      <div class="meta">
+        <div class="code">${code.toUpperCase()} ${isBase?'<span class="tag">BASE</span>':''}</div>
+        <div class="name">${nm}</div>
+      </div>
+      <div>
+        <div class="amount">${amount}</div>
+        ${(!isBase && rates[code]!=null) ? `<div class="sub">1 ${base.toUpperCase()} = ${fmt(rates[code])}</div>`:''}
+      </div>`;
+    row.addEventListener("click", ()=>{ if(!isBase) promote(code); });
+    rowsEl.appendChild(row);
+  });
+
+  const up = document.getElementById("updated");
+  if(rateDate){
+    up.innerHTML = (fromCache?'<span class="offline">hors-ligne · </span>':'') + "maj "+rateDate;
+  }else{
+    up.innerHTML = '<span class="offline">pas de taux — connexion requise</span>';
+  }
+}
+
+/* promeut une devise en base, en gardant le montant affiché */
+function promote(code){
+  const value = evaluate(expr);
+  const converted = (rates[code]!=null) ? value*rates[code] : 0;
+  base = code;
+  currencies = [base, ...currencies.filter(c=>c!==base)];
+  expr = converted ? String(Math.round(converted*1e4)/1e4) : "";
+  loadRates();
+}
+
+/* ---------- Clavier ---------- */
+function press(k){
+  if(k==="C"){ expr=""; }
+  else if(k==="back"){ expr=expr.slice(0,-1); }
+  else if(k==="eq"){ const v=evaluate(expr); expr = v?String(Math.round(v*1e6)/1e6):""; }
+  else if(/[+\-*/]/.test(k)){
+    if(!expr && k!=="-") return;
+    if(/[+\-*/]$/.test(expr)) expr=expr.slice(0,-1)+k; else expr+=k;
+  }
+  else if(k==="."){
+    const last = expr.split(/[+\-*/]/).pop();
+    if(!last.includes(".")) expr += (last===""?"0.":".");
+  }
+  else{ // chiffre
+    const last = expr.split(/[+\-*/]/).pop();
+    if(last==="0") expr=expr.slice(0,-1)+k; else expr+=k;
+  }
+  render();
+}
+document.getElementById("pad").addEventListener("click", e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  press(b.dataset.k);
+});
+// clavier physique (desktop / test)
+window.addEventListener("keydown", e=>{
+  const map={Enter:"eq","=":"eq",Backspace:"back",Escape:"C",",":".","." :"."};
+  let k = map[e.key] ?? e.key;
+  if(/^[0-9]$/.test(k)||/^[+\-*/]$/.test(k)||["eq","back","C","."].includes(k)){ press(k); e.preventDefault(); }
+});
+
+/* ---------- Sheet « Gérer » ---------- */
+const sheet=document.getElementById("sheet"), sheetBg=document.getElementById("sheetBg");
+function openSheet(){ renderPicked(); renderResults(""); sheet.classList.add("open"); sheetBg.classList.add("open"); }
+function closeSheet(){ sheet.classList.remove("open"); sheetBg.classList.remove("open"); loadRates(); }
+document.getElementById("manageBtn").addEventListener("click", openSheet);
+document.getElementById("doneBtn").addEventListener("click", closeSheet);
+sheetBg.addEventListener("click", closeSheet);
+
+function renderPicked(){
+  const el=document.getElementById("picked"); el.innerHTML="";
+  currencies.forEach(code=>{
+    const isBase = code===base;
+    const fl=flag(code);
+    const row=document.createElement("div"); row.className="pill";
+    row.innerHTML=`
+      ${fl?`<div class="flag" style="font-size:20px;width:26px">${fl}</div>`:`<div class="badge">${code.slice(0,2).toUpperCase()}</div>`}
+      <div style="min-width:0"><div class="pcode">${code.toUpperCase()}</div><div class="pname">${names[code]||""}</div></div>
+      ${isBase?'<span class="isbase">BASE</span>':'<button class="setbase">Base</button>'}
+      ${isBase?'':'<button class="rm">Retirer</button>'}`;
+    if(!isBase){
+      row.querySelector(".setbase").addEventListener("click", ()=>{ base=code; currencies=[base,...currencies.filter(c=>c!==base)]; renderPicked(); });
+      row.querySelector(".rm").addEventListener("click", ()=>{ currencies=currencies.filter(c=>c!==code); renderPicked(); });
+    }
+    el.appendChild(row);
+  });
+}
+function renderResults(q){
+  const el=document.getElementById("results"); el.innerHTML="";
+  q=q.trim().toLowerCase();
+  const entries=Object.entries(names).filter(([c,n])=>
+    !currencies.includes(c) && (!q || c.includes(q) || (n||"").toLowerCase().includes(q))
+  ).slice(0,40);
+  entries.forEach(([c,n])=>{
+    const fl=flag(c);
+    const r=document.createElement("div"); r.className="result";
+    r.innerHTML=`${fl?`<div class="flag" style="font-size:20px;width:26px">${fl}</div>`:`<div class="badge">${c.slice(0,2).toUpperCase()}</div>`}
+      <div class="rc">${c.toUpperCase()}</div><div class="rn">${n||""}</div>`;
+    r.addEventListener("click", ()=>{ currencies.push(c); document.getElementById("search").value=""; renderPicked(); renderResults(""); });
+    el.appendChild(r);
+  });
+  if(!entries.length) el.innerHTML=`<div class="rn" style="padding:14px">Aucune devise trouvée.</div>`;
+}
+document.getElementById("search").addEventListener("input", e=>renderResults(e.target.value));
+
+window.addEventListener("hashchange", ()=>{ parseHash(); loadRates(); });
+
+/* ---------- Init ---------- */
+(async function init(){
+  parseHash();
+  await loadNames();
+  await loadRates();
+  render();
+  if("serviceWorker" in navigator){
+    try{ await navigator.serviceWorker.register("sw.js"); }catch(e){}
+  }
+})();
+</script>
+</body>
+</html>
