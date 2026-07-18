@@ -1,5 +1,5 @@
 /* Service worker — chemins RELATIFS (sous-dossier github.io compatible) */
-const VERSION = "devises-v1";
+const VERSION = "devises-v2";
 const SHELL = [
   "./",
   "./index.html",

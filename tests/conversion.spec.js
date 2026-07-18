@@ -10,16 +10,27 @@ test.describe("Conversion entre devises", () => {
     await page.goto("/"); // eur (base + focus de saisie), usd, gbp
   });
 
-  test("les conversions ne se mettent à jour qu'à la validation par =", async ({ page }) => {
+  test("un simple nombre convertit les autres lignes en temps réel, sans =", async ({ page }) => {
     const eurRates = crossRates("eur");
-    await pressKeys(page, ["1", "0", "0"]);
-    // Tant que = n'a pas été pressé, les autres lignes restent sur leur dernière valeur confirmée (0).
-    await expect(amountOf(page, "usd")).toHaveText("0");
-    await expect(amountOf(page, "gbp")).toHaveText("0");
+    await pressKeys(page, ["1", "0"]);
+    await expect(amountOf(page, "usd")).toHaveText(fmt(10 * eurRates.usd));
+    await expect(amountOf(page, "gbp")).toHaveText(fmt(10 * eurRates.gbp));
 
-    await pressKey(page, "eq");
+    await pressKeys(page, ["0"]);
     await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurRates.usd));
     await expect(amountOf(page, "gbp")).toHaveText(fmt(100 * eurRates.gbp));
+  });
+
+  test("dès qu'une opération est entamée (+ - * /), les autres lignes se figent jusqu'à =", async ({ page }) => {
+    const eurUsd = crossRates("eur").usd;
+    await pressKeys(page, ["1", "0", "0"]);
+    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurUsd)); // live
+
+    await pressKeys(page, ["+", "5", "0"]);
+    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurUsd)); // figé sur la valeur d'avant l'opérateur
+
+    await pressKey(page, "eq");
+    await expect(amountOf(page, "usd")).toHaveText(fmt(150 * eurUsd));
   });
 
   test("après =, retaper un nouveau calcul ne recalcule pas tant qu'on n'a pas revalidé", async ({ page }) => {
@@ -32,6 +43,12 @@ test.describe("Conversion entre devises", () => {
 
     await pressKey(page, "eq");
     await expect(amountOf(page, "usd")).toHaveText(fmt(150 * eurUsd));
+  });
+
+  test("un nombre négatif (signe -) convertit aussi en temps réel", async ({ page }) => {
+    const eurUsd = crossRates("eur").usd;
+    await pressKeys(page, ["-", "5"]);
+    await expect(amountOf(page, "usd")).toHaveText(fmt(-5 * eurUsd));
   });
 
   test("affiche le taux de référence sous chaque devise convertie", async ({ page }) => {
@@ -96,5 +113,29 @@ test.describe("Conversion entre devises", () => {
 
   test("affiche la date de mise à jour renvoyée par l'API mockée", async ({ page }) => {
     await expect(page.locator("#updated")).toContainText(MOCK_DATE);
+  });
+
+  test("un micro-montant (ex. 1 VND en EUR) affiche des décimales significatives au lieu de 0", async ({ page }) => {
+    await page.goto("/#eur,vnd");
+    // La base reste eur (un clic sur une ligne ne change que le focus de saisie) : les taux
+    // viennent donc de la table eur, et le taux croisé vnd->eur est son inverse.
+    const vndEur = 1 / crossRates("eur").vnd; // très petit : eur est ~26000x plus fort que vnd
+    await rowByCode(page, "vnd").click(); // focus -> vnd, sans montant saisi
+    await pressKeys(page, ["1"]);
+    await expect(amountOf(page, "eur")).toHaveText(fmt(vndEur));
+    await expect(amountOf(page, "eur")).not.toHaveText("0");
+  });
+
+  test("continuer à taper après un changement de ligne active complète le montant affiché (ne l'efface pas)", async ({ page }) => {
+    await pressKeys(page, ["1", "0", "0"]);
+    const eurUsd = crossRates("eur").usd;
+    const converted = Math.round(100 * eurUsd * 1e6) / 1e6;
+
+    await rowByCode(page, "usd").click();
+    await expect(amountOf(page, "usd")).toHaveText(prettyExpr(String(converted)));
+
+    await pressKeys(page, ["5"]);
+    // Le nouveau chiffre complète le montant reconverti, il ne repart pas de zéro.
+    await expect(amountOf(page, "usd")).toHaveText(prettyExpr(String(converted) + "5"));
   });
 });

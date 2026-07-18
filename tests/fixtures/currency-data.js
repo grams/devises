@@ -24,6 +24,7 @@ const NAMES = {
   nzd: "New Zealand Dollar",
   zar: "South African Rand",
   xau: "Gold Ounce",
+  vnd: "Vietnamese Dong",
 };
 
 // Taux "réels" (fictifs) exprimés par rapport à 1 USD.
@@ -43,6 +44,7 @@ const USD_RATES = {
   nok: 10.9,
   nzd: 1.68,
   zar: 18.6,
+  vnd: 24000, // volontairement très éloigné des autres taux : sert à tester le formatage des micro-montants
 };
 
 function round(n) {

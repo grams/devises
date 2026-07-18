@@ -7,7 +7,11 @@
 function fmt(n) {
   if (!isFinite(n)) return "—";
   const a = Math.abs(n);
-  const d = a >= 1000 ? 0 : a >= 1 ? 2 : a > 0 ? 4 : 0;
+  let d;
+  if (a >= 1000) d = 0;
+  else if (a >= 1) d = 2;
+  else if (a > 0) d = Math.min(10, -Math.floor(Math.log10(a)) + 2);
+  else d = 0;
   return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n);
 }
 

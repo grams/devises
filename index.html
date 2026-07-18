@@ -299,8 +299,13 @@ async function loadRates(){
 function evaluate(s){
   s = s.replace(/[+\-*/.]$/,"");            // ignore un opérateur en attente
   if(!s) return 0;
-  const toks = s.match(/(\d+\.?\d*|\.\d+|[+\-*/])/g);
+  let toks = s.match(/(\d+\.?\d*|\.\d+|[+\-*/])/g);
   if(!toks) return 0;
+  // "-" en tout début d'expression est un signe négatif, pas une soustraction :
+  // on le fusionne avec le nombre qui suit pour ne pas le traiter comme un opérateur binaire.
+  if(toks[0]==="-" && toks[1]!=null){
+    toks = ["-"+toks[1], ...toks.slice(2)];
+  }
   // shunting-yard -> RPN
   const out=[], ops=[], prec={"+":1,"-":1,"*":2,"/":2};
   for(const t of toks){
@@ -319,6 +324,12 @@ function evaluate(s){
   }
   const v = st.pop();
   return isFinite(v)? v : 0;
+}
+// Vrai si une opération (+ - * /) a été entamée : un "-" en tout début
+// d'expression est un signe négatif, pas un opérateur.
+function hasOperator(s){
+  const body = s[0]==="-" ? s.slice(1) : s;
+  return /[+\-*/]/.test(body);
 }
 // Groupe les milliers (à la française) sur la partie entière de chaque nombre,
 // dès la saisie — pas seulement sur les montants convertis déjà formatés.
@@ -339,10 +350,17 @@ function prettyExpr(s){
 }
 
 /* ---------- Formatage ---------- */
+// Pour les petits montants (ex. 1 VND en EUR), un nombre fixe de décimales
+// arrondit tout à 0 : on étend dynamiquement les décimales jusqu'à révéler
+// ~3 chiffres significatifs, quelle que soit l'écart entre les devises.
 function fmt(n){
   if(!isFinite(n)) return "—";
   const a=Math.abs(n);
-  const d = a>=1000?0 : a>=1?2 : a>0?4 : 0;
+  let d;
+  if(a>=1000) d=0;
+  else if(a>=1) d=2;
+  else if(a>0) d=Math.min(10, -Math.floor(Math.log10(a))+2);
+  else d=0;
   return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:d}).format(n);
 }
 
@@ -447,6 +465,11 @@ function press(k){
     const last = expr.split(/[+\-*/]/).pop();
     if(last==="0") expr=expr.slice(0,-1)+k; else expr+=k;
   }
+  // Tant qu'aucune opération n'est entamée, `committed` (utilisé pour
+  // convertir les autres lignes) suit la saisie en temps réel — pas besoin
+  // d'attendre le "=". Dès qu'un opérateur apparaît, on gèle sur la valeur
+  // d'avant l'opération, jusqu'au "=".
+  if(!hasOperator(expr)) committed = evaluate(expr);
   render();
 }
 document.getElementById("pad").addEventListener("click", e=>{
