@@ -15,6 +15,13 @@ function fmt(n) {
   return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: d }).format(n);
 }
 
+function fmtBase(n) {
+  if (!isFinite(n)) return "—";
+  const cents = Math.round(n * 100 * 1e6) / 1e6;
+  const v = Math.ceil(cents) / 100;
+  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v);
+}
+
 function groupThousands(intStr) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Number(intStr || "0"));
 }
@@ -32,4 +39,4 @@ function prettyExpr(s) {
   return withGrouping.replace(/\*/g, "×").replace(/\//g, "÷").replace(/-/g, "−");
 }
 
-module.exports = { fmt, prettyExpr };
+module.exports = { fmt, fmtBase, prettyExpr };

@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { mockCurrencyApi } = require("./utils/api-mock");
 const { rowByCode, amountOf, subOf, pressKeys, pressKey } = require("./utils/dom");
-const { fmt, prettyExpr } = require("./utils/format");
+const { fmt, fmtBase, prettyExpr } = require("./utils/format");
 const { MOCK_DATE, crossRates } = require("./fixtures/currency-data");
 
 test.describe("Conversion entre devises", () => {
@@ -116,10 +116,10 @@ test.describe("Conversion entre devises", () => {
   });
 
   test("un micro-montant (ex. 1 VND en EUR) affiche des décimales significatives au lieu de 0", async ({ page }) => {
-    await page.goto("/#eur,vnd");
-    // La base reste eur (un clic sur une ligne ne change que le focus de saisie) : les taux
-    // viennent donc de la table eur, et le taux croisé vnd->eur est son inverse.
-    const vndEur = 1 / crossRates("eur").vnd; // très petit : eur est ~26000x plus fort que vnd
+    // base = usd, pour que la devise ciblée (eur) ne soit pas la devise principale
+    // et ne subisse donc pas son plafond à 2 décimales (voir tests fmtBase plus bas).
+    await page.goto("/#usd,vnd,eur");
+    const vndEur = crossRates("usd").eur / crossRates("usd").vnd; // très petit : eur est ~26000x plus fort que vnd
     await rowByCode(page, "vnd").click(); // focus -> vnd, sans montant saisi
     await pressKeys(page, ["1"]);
     await expect(amountOf(page, "eur")).toHaveText(fmt(vndEur));
@@ -167,5 +167,22 @@ test.describe("Conversion entre devises", () => {
     await pressKeys(page, ["+"]);
     await expect(amountOf(page, "eur")).not.toHaveText("0");
     await expect(amountOf(page, "eur")).toContainText("+");
+  });
+
+  test("la devise principale arrondit toujours au centime supérieur, jamais plus de 2 décimales", async ({ page }) => {
+    const gbpEur = 1 / crossRates("eur").gbp;
+    await rowByCode(page, "gbp").click();
+    await pressKeys(page, ["7"]); // 7 GBP -> ~8,1519 EUR : l'arrondi classique donnerait 8,15
+    const expected = fmtBase(7 * gbpEur);
+    expect(expected).toBe("8,16"); // vérifie qu'on teste bien un cas où l'arrondi supérieur diffère de l'arrondi classique
+    await expect(amountOf(page, "eur")).toHaveText(expected);
+  });
+
+  test("la devise principale plafonne à 2 décimales même pour un montant < 1", async ({ page }) => {
+    const gbpEur = 1 / crossRates("eur").gbp;
+    await rowByCode(page, "gbp").click();
+    await pressKeys(page, [".", "5"]); // 0,5 GBP -> ~0,5823 EUR, fmt() normal irait à 3 décimales
+    await expect(amountOf(page, "eur")).toHaveText(fmtBase(0.5 * gbpEur));
+    await expect(amountOf(page, "eur")).toHaveText("0,59");
   });
 });

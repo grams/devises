@@ -374,6 +374,14 @@ function fmt(n){
   else d=0;
   return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:d}).format(n);
 }
+// Devise principale : jamais plus de 2 décimales, arrondi au centime supérieur
+// (utile pour ne jamais sous-estimer un montant à payer dans sa devise de référence).
+function fmtBase(n){
+  if(!isFinite(n)) return "—";
+  const cents = Math.round(n*100*1e6)/1e6; // tue le bruit flottant avant l'arrondi
+  const v = Math.ceil(cents)/100;
+  return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:2}).format(v);
+}
 
 /* ---------- Taux croisés (indépendants du fetch réseau, dérivés de `rates`) ---------- */
 function rateOf(code){
@@ -402,7 +410,7 @@ function render(){
       amount = prettyExpr(expr);
     }else{
       rate = crossRate(active, code);
-      amount = (rate==null) ? "—" : fmt(committed * rate);
+      amount = (rate==null) ? "—" : (isBase ? fmtBase(committed * rate) : fmt(committed * rate));
     }
     const nm = names[code] || "";
     row.innerHTML = `
