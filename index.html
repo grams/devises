@@ -38,14 +38,16 @@
   .row:active{background:#1c2f37}
   .row.base{background:var(--home); border-color:var(--line); padding-left:18px}
   .row.base::before{content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px; border-radius:3px; background:var(--gold)}
-  .flag{font-size:26px; line-height:1; width:34px; text-align:center}
+  .row.active:not(.base){border-color:var(--gold)}
+  .flag{width:34px; height:25px; border-radius:4px; overflow:hidden; flex:none; background:#0d1519}
+  .flag img{width:100%; height:100%; object-fit:cover; display:block}
   .badge{font-size:12px; font-weight:700; font-family:var(--mono); width:34px; height:26px; display:flex; align-items:center; justify-content:center; background:#0d1519; border:1px solid var(--line); border-radius:7px; color:var(--muted)}
   .meta{min-width:0}
   .code{font-weight:700; font-size:19px; letter-spacing:.02em; display:flex; align-items:center; gap:8px}
   .tag{font-size:9px; font-weight:800; letter-spacing:.12em; color:var(--ink); background:var(--gold); padding:2px 5px; border-radius:4px}
   .name{font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .amount{font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:22px; text-align:right; font-weight:600; letter-spacing:-.01em}
-  .row.base .amount{color:var(--gold); font-size:24px}
+  .row.active .amount{color:var(--gold); font-size:24px}
   .sub{font-family:var(--mono); font-size:10px; color:var(--muted); text-align:right; margin-top:2px}
 
   .manage{margin:12px; padding:12px; background:transparent; border:1px dashed var(--line); color:var(--muted);
@@ -117,28 +119,30 @@
   <div class="spacer"></div>
 
   <div class="pad" id="pad">
-    <button class="key clear" data-k="C">C</button>
+    <button class="key clear" data-k="C">AC</button>
+    <button class="key util" data-k="back">⌫</button>
+    <button class="key op" data-k="%">%</button>
+    <button class="key op" data-k="/">÷</button>
+
     <button class="key" data-k="7">7</button>
     <button class="key" data-k="8">8</button>
     <button class="key" data-k="9">9</button>
+    <button class="key op" data-k="*">×</button>
 
-    <button class="key op" data-k="/">÷</button>
     <button class="key" data-k="4">4</button>
     <button class="key" data-k="5">5</button>
     <button class="key" data-k="6">6</button>
+    <button class="key op" data-k="-">−</button>
 
-    <button class="key op" data-k="*">×</button>
     <button class="key" data-k="1">1</button>
     <button class="key" data-k="2">2</button>
     <button class="key" data-k="3">3</button>
-
-    <button class="key op" data-k="-">−</button>
     <button class="key op" data-k="+">+</button>
+
+    <button class="key" data-k="000">000</button>
     <button class="key" data-k="0">0</button>
     <button class="key util" data-k=".">,</button>
-
-    <button class="key util" data-k="back" style="grid-column:span 2">⌫</button>
-    <button class="key eq" data-k="eq" style="grid-column:span 2">=</button>
+    <button class="key eq" data-k="eq">=</button>
   </div>
 
   <!-- Manage sheet -->
@@ -177,7 +181,7 @@ async function fetchJson(pathFn){
   throw new Error("unreachable");
 }
 
-/* ---------- Currency -> country ISO2 (drapeaux emoji) ---------- */
+/* ---------- Currency -> country ISO2 (drapeaux) ---------- */
 const ISO = {
   eur:"eu",usd:"us",gbp:"gb",jpy:"jp",chf:"ch",cad:"ca",aud:"au",nzd:"nz",
   cny:"cn",hkd:"hk",twd:"tw",krw:"kr",sgd:"sg",myr:"my",idr:"id",php:"ph",
@@ -187,20 +191,36 @@ const ISO = {
   czk:"cz",huf:"hu",ron:"ro",bgn:"bg",sek:"se",nok:"no",dkk:"dk",isk:"is",
   brl:"br",mxn:"mx",ars:"ar",clp:"cl",cop:"co",pen:"pe",uyu:"uy",
 };
-function flag(code){
+// Drapeaux en image (les émojis régionaux ne rendent pas comme des drapeaux
+// sous Windows, faute de glyphes dans les polices système : on affiche donc
+// de vraies images, mises en cache par le service worker pour l'usage hors-ligne.
+function flagMarkup(code, extraStyle){
   const cc = ISO[code];
-  if(!cc) return null;
-  return cc.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
+  if(!cc) return `<div class="badge">${code.slice(0,2).toUpperCase()}</div>`;
+  const style = extraStyle ? ` style="${extraStyle}"` : "";
+  return `<div class="flag"${style}><img src="https://flagcdn.com/${cc}.svg" alt="" loading="lazy" data-code="${code}"></div>`;
+}
+// Replie sur le badge texte si l'image ne charge pas (offline sans cache, code inconnu de flagcdn…).
+function attachFlagFallback(container){
+  container.querySelectorAll(".flag img").forEach(img=>{
+    img.addEventListener("error", ()=>{
+      const code = img.dataset.code;
+      const box = img.closest(".flag");
+      if(box) box.outerHTML = `<div class="badge">${code.slice(0,2).toUpperCase()}</div>`;
+    }, {once:true});
+  });
 }
 
 /* ---------- État ---------- */
-let base = "eur";
-let currencies = ["eur","usd","gbp"];   // [0] = base
-let rates = {};        // { vnd: 28000, ... } depuis la base
+let base = "eur";        // devise de référence (taux fetchés depuis elle) ; ne change que via « Gérer »
+let active = base;       // devise dans laquelle on saisit actuellement (change au clic sur une ligne)
+let currencies = ["eur","usd","gbp"];   // [0] = base ; l'ordre ne change que via « Gérer »
+let rates = {};        // { vnd: 28000, ... } depuis `base`
 let names = {};        // { eur:"Euro", ... }
 let rateDate = null;
 let fromCache = false;
-let expr = "";         // expression saisie (ex "45000*3")
+let expr = "";         // expression en cours de saisie (ex "45000*3")
+let committed = 0;     // dernier montant confirmé (au =, ou en changeant de ligne active) : sert aux conversions affichées
 
 /* ---------- Hash <-> état ---------- */
 function parseHash(){
@@ -210,6 +230,8 @@ function parseHash(){
     currencies = [...new Set(list)];
     base = currencies[0];
   }
+  active = base;
+  committed = 0;
 }
 function writeHash(){
   const h = "#" + currencies.join(",");
@@ -218,13 +240,30 @@ function writeHash(){
 
 /* ---------- Cache local (offline) ---------- */
 const CK = b => "rates:"+b;
+const LAST_KEY = "ratesLast"; // dernier instantané connu, quelle que soit la base, pour repli hors-ligne
 function saveCache(){
-  try{ localStorage.setItem(CK(base), JSON.stringify({rates, date:rateDate, at:Date.now()})); }catch(e){}
+  try{
+    localStorage.setItem(CK(base), JSON.stringify({rates, date:rateDate, at:Date.now()}));
+    localStorage.setItem(LAST_KEY, JSON.stringify({base, rates, date:rateDate, at:Date.now()}));
+  }catch(e){}
 }
 function loadCache(){
   try{
     const c = JSON.parse(localStorage.getItem(CK(base))||"null");
     if(c){ rates = c.rates; rateDate = c.date; fromCache = true; return true; }
+  }catch(e){}
+  // Repli : dernier instantané connu pour une AUTRE base déjà visitée, reconverti
+  // via les taux croisés, pour ne pas se retrouver sans rien hors-ligne.
+  try{
+    const last = JSON.parse(localStorage.getItem(LAST_KEY)||"null");
+    if(last && last.rates){
+      const pivot = last.base===base ? 1 : last.rates[base];
+      if(pivot!=null){
+        const derived = {};
+        for(const [code,r] of Object.entries(last.rates)) derived[code] = r/pivot;
+        rates = derived; rateDate = last.date; fromCache = true; return true;
+      }
+    }
   }catch(e){}
   return false;
 }
@@ -281,8 +320,22 @@ function evaluate(s){
   const v = st.pop();
   return isFinite(v)? v : 0;
 }
+// Groupe les milliers (à la française) sur la partie entière de chaque nombre,
+// dès la saisie — pas seulement sur les montants convertis déjà formatés.
+function groupThousands(intStr){
+  return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0}).format(Number(intStr||"0"));
+}
 function prettyExpr(s){
-  return (s||"0").replace(/\*/g,"×").replace(/\//g,"÷").replace(/-/g,"−").replace(/\./g,",");
+  s = s || "";
+  if(!s) return "0";
+  const withGrouping = s.replace(/\d+\.?\d*|\.\d+/g, (m)=>{
+    const dot = m.indexOf(".");
+    if(dot===-1) return groupThousands(m);
+    const intPart = m.slice(0,dot);
+    const frac = m.slice(dot+1);
+    return groupThousands(intPart) + "," + frac;
+  });
+  return withGrouping.replace(/\*/g,"×").replace(/\//g,"÷").replace(/-/g,"−");
 }
 
 /* ---------- Formatage ---------- */
@@ -293,24 +346,34 @@ function fmt(n){
   return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:d}).format(n);
 }
 
+/* ---------- Taux croisés (indépendants du fetch réseau, dérivés de `rates`) ---------- */
+function rateOf(code){
+  return code===base ? 1 : rates[code];
+}
+function crossRate(fromCode, toCode){
+  if(fromCode===toCode) return 1;
+  const rf = rateOf(fromCode), rt = rateOf(toCode);
+  if(rf==null || rt==null) return null;
+  return rt / rf;
+}
+
 /* ---------- Rendu ---------- */
 function render(){
   writeHash();
-  const value = evaluate(expr);
   const rowsEl = document.getElementById("rows");
   rowsEl.innerHTML = "";
   currencies.forEach(code=>{
     const isBase = code===base;
+    const isActive = code===active;
     const row = document.createElement("div");
-    row.className = "row"+(isBase?" base":"");
-    const fl = flag(code);
-    const flagEl = fl ? `<div class="flag">${fl}</div>` : `<div class="badge">${code.slice(0,2).toUpperCase()}</div>`;
-    let amount;
-    if(isBase){
+    row.className = "row"+(isBase?" base":"")+(isActive?" active":"");
+    const flagEl = flagMarkup(code);
+    let amount, rate = null;
+    if(isActive){
       amount = prettyExpr(expr);
     }else{
-      const r = rates[code];
-      amount = (r==null) ? "—" : fmt(value * r);
+      rate = crossRate(active, code);
+      amount = (rate==null) ? "—" : fmt(committed * rate);
     }
     const nm = names[code] || "";
     row.innerHTML = `
@@ -321,11 +384,12 @@ function render(){
       </div>
       <div>
         <div class="amount">${amount}</div>
-        ${(!isBase && rates[code]!=null) ? `<div class="sub">1 ${base.toUpperCase()} = ${fmt(rates[code])}</div>`:''}
+        ${(!isActive && rate!=null) ? `<div class="sub">1 ${active.toUpperCase()} = ${fmt(rate)}</div>`:''}
       </div>`;
-    row.addEventListener("click", ()=>{ if(!isBase) promote(code); });
+    row.addEventListener("click", ()=>{ if(!isActive) setActive(code); });
     rowsEl.appendChild(row);
   });
+  attachFlagFallback(rowsEl);
 
   const up = document.getElementById("updated");
   if(rateDate){
@@ -335,21 +399,42 @@ function render(){
   }
 }
 
-/* promeut une devise en base, en gardant le montant affiché */
-function promote(code){
+/* Change la ligne où l'on saisit (focus de saisie uniquement : ni la base,
+   ni l'ordre des devises ne changent — seul « Gérer » le fait). Purement
+   local : aucun appel réseau, les taux sont déjà connus relativement à `base`. */
+function setActive(code){
+  if(code===active) return;
   const value = evaluate(expr);
-  const converted = (rates[code]!=null) ? value*rates[code] : 0;
-  base = code;
-  currencies = [base, ...currencies.filter(c=>c!==base)];
-  expr = converted ? String(Math.round(converted*1e4)/1e4) : "";
-  loadRates();
+  const rate = crossRate(active, code);
+  const converted = (value && rate!=null) ? value*rate : 0;
+  active = code;
+  committed = converted;
+  expr = converted ? String(Math.round(converted*1e6)/1e6) : "";
+  render();
 }
 
 /* ---------- Clavier ---------- */
 function press(k){
-  if(k==="C"){ expr=""; }
+  if(k==="C"){ expr=""; committed=0; }
   else if(k==="back"){ expr=expr.slice(0,-1); }
-  else if(k==="eq"){ const v=evaluate(expr); expr = v?String(Math.round(v*1e6)/1e6):""; }
+  else if(k==="eq"){
+    const v=evaluate(expr);
+    committed = v;
+    expr = v?String(Math.round(v*1e6)/1e6):"";
+  }
+  else if(k==="%"){
+    const parts = expr.split(/([+\-*/])/);
+    const last = parts[parts.length-1];
+    if(!last) return; // rien à convertir (expression vide ou opérateur en attente)
+    const n = parseFloat(last);
+    if(isNaN(n)) return;
+    parts[parts.length-1] = String(n/100);
+    expr = parts.join("");
+  }
+  else if(k==="000"){
+    const last = expr.split(/[+\-*/]/).pop();
+    if(last==="0") expr=expr.slice(0,-1)+"000"; else expr+="000";
+  }
   else if(/[+\-*/]/.test(k)){
     if(!expr && k!=="-") return;
     if(/[+\-*/]$/.test(expr)) expr=expr.slice(0,-1)+k; else expr+=k;
@@ -372,13 +457,17 @@ document.getElementById("pad").addEventListener("click", e=>{
 window.addEventListener("keydown", e=>{
   const map={Enter:"eq","=":"eq",Backspace:"back",Escape:"C",",":".","." :"."};
   let k = map[e.key] ?? e.key;
-  if(/^[0-9]$/.test(k)||/^[+\-*/]$/.test(k)||["eq","back","C","."].includes(k)){ press(k); e.preventDefault(); }
+  if(/^[0-9]$/.test(k)||/^[+\-*/]$/.test(k)||k==="%"||["eq","back","C","."].includes(k)){ press(k); e.preventDefault(); }
 });
 
 /* ---------- Sheet « Gérer » ---------- */
 const sheet=document.getElementById("sheet"), sheetBg=document.getElementById("sheetBg");
 function openSheet(){ renderPicked(); renderResults(""); sheet.classList.add("open"); sheetBg.classList.add("open"); }
-function closeSheet(){ sheet.classList.remove("open"); sheetBg.classList.remove("open"); loadRates(); }
+function closeSheet(){
+  sheet.classList.remove("open"); sheetBg.classList.remove("open");
+  if(!currencies.includes(active)) active = base; // filet de sécurité si la devise active a été retirée
+  loadRates();
+}
 document.getElementById("manageBtn").addEventListener("click", openSheet);
 document.getElementById("doneBtn").addEventListener("click", closeSheet);
 sheetBg.addEventListener("click", closeSheet);
@@ -387,19 +476,19 @@ function renderPicked(){
   const el=document.getElementById("picked"); el.innerHTML="";
   currencies.forEach(code=>{
     const isBase = code===base;
-    const fl=flag(code);
     const row=document.createElement("div"); row.className="pill";
     row.innerHTML=`
-      ${fl?`<div class="flag" style="font-size:20px;width:26px">${fl}</div>`:`<div class="badge">${code.slice(0,2).toUpperCase()}</div>`}
+      ${flagMarkup(code, "width:26px;height:19px")}
       <div style="min-width:0"><div class="pcode">${code.toUpperCase()}</div><div class="pname">${names[code]||""}</div></div>
       ${isBase?'<span class="isbase">BASE</span>':'<button class="setbase">Base</button>'}
       ${isBase?'':'<button class="rm">Retirer</button>'}`;
     if(!isBase){
-      row.querySelector(".setbase").addEventListener("click", ()=>{ base=code; currencies=[base,...currencies.filter(c=>c!==base)]; renderPicked(); });
+      row.querySelector(".setbase").addEventListener("click", ()=>{ base=code; active=code; currencies=[base,...currencies.filter(c=>c!==base)]; renderPicked(); });
       row.querySelector(".rm").addEventListener("click", ()=>{ currencies=currencies.filter(c=>c!==code); renderPicked(); });
     }
     el.appendChild(row);
   });
+  attachFlagFallback(el);
 }
 function renderResults(q){
   const el=document.getElementById("results"); el.innerHTML="";
@@ -408,14 +497,14 @@ function renderResults(q){
     !currencies.includes(c) && (!q || c.includes(q) || (n||"").toLowerCase().includes(q))
   ).slice(0,40);
   entries.forEach(([c,n])=>{
-    const fl=flag(c);
     const r=document.createElement("div"); r.className="result";
-    r.innerHTML=`${fl?`<div class="flag" style="font-size:20px;width:26px">${fl}</div>`:`<div class="badge">${c.slice(0,2).toUpperCase()}</div>`}
+    r.innerHTML=`${flagMarkup(c, "width:26px;height:19px")}
       <div class="rc">${c.toUpperCase()}</div><div class="rn">${n||""}</div>`;
     r.addEventListener("click", ()=>{ currencies.push(c); document.getElementById("search").value=""; renderPicked(); renderResults(""); });
     el.appendChild(r);
   });
   if(!entries.length) el.innerHTML=`<div class="rn" style="padding:14px">Aucune devise trouvée.</div>`;
+  attachFlagFallback(el);
 }
 document.getElementById("search").addEventListener("input", e=>renderResults(e.target.value));
 

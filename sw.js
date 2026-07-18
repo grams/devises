@@ -23,6 +23,7 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   const isRates = /jsdelivr\.net|currency-api\.pages\.dev/.test(url.host);
+  const isFlag = /flagcdn\.com/.test(url.host);
 
   if (isRates) {
     // Taux : réseau d'abord, cache en secours (voyage hors-ligne)
@@ -32,6 +33,18 @@ self.addEventListener("fetch", e => {
         caches.open(VERSION).then(c => c.put(e.request, copy));
         return res;
       }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  if (isFlag) {
+    // Drapeaux : ne changent jamais, cache d'abord
+    e.respondWith(
+      caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(VERSION).then(c => c.put(e.request, copy));
+        return res;
+      }))
     );
     return;
   }
