@@ -16,6 +16,17 @@ Chaque configuration = un marque-page, par exemple :
 
 L'app met à jour le hash toute seule quand on ajoute/retire/change de devise — il suffit de re-bookmarker pour figer une nouvelle config.
 
+## Frais de conversion
+
+Un forfait de **2 %** s'applique à toute conversion qui touche la **devise principale** (la première du hash), toujours dans le sens défavorable :
+
+- devise principale → devise étrangère : on reçoit 2 % de moins ;
+- devise étrangère → devise principale : la dépense coûte 2 % de plus.
+
+Un aller-retour ne retombe donc pas sur le montant de départ — c'est voulu, comme avec une vraie carte. Les paires qui n'impliquent pas la devise principale (ex. `usd → gbp` quand la base est `eur`) restent au taux brut. Le taux affiché sous chaque ligne est le **taux effectif**, frais inclus, signalé par la mention « frais 2 % ».
+
+Pour ajuster le taux, modifier la constante `FEE` dans `index.html`.
+
 ## Déploiement sur GitHub Pages
 
 Depuis ce dossier :

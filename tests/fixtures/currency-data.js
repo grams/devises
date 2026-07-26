@@ -63,4 +63,23 @@ function crossRates(base) {
   return out;
 }
 
-module.exports = { MOCK_DATE, NAMES, USD_RATES, crossRates };
+// Frais de conversion appliqués par l'app (voir FEE dans index.html).
+const FEE = 0.02;
+const FEE_LABEL = "2 %";
+
+// Reproduit crossRate() de index.html : l'app ne connaît que la table servie
+// pour `base`, et dérive tout le reste de celle-ci ; les frais s'appliquent
+// dès que la devise principale est d'un côté de la conversion.
+function effRate(base, from, to) {
+  if (from === to) return 1;
+  const table = crossRates(base);
+  const rf = from === base ? 1 : table[from];
+  const rt = to === base ? 1 : table[to];
+  if (rf == null || rt == null) return null;
+  const raw = rt / rf;
+  if (from === base) return raw * (1 - FEE);
+  if (to === base) return raw * (1 + FEE);
+  return raw;
+}
+
+module.exports = { MOCK_DATE, NAMES, USD_RATES, FEE, FEE_LABEL, crossRates, effRate };

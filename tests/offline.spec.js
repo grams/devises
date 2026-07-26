@@ -2,7 +2,7 @@ const { test, expect } = require("@playwright/test");
 const { abortCurrencyApi } = require("./utils/api-mock");
 const { amountOf, subOf, pressKeys } = require("./utils/dom");
 const { fmt } = require("./utils/format");
-const { MOCK_DATE, crossRates } = require("./fixtures/currency-data");
+const { MOCK_DATE, FEE_LABEL, crossRates, effRate } = require("./fixtures/currency-data");
 
 // Le service worker de l'app (stratégie "réseau d'abord" pour les taux) tourne
 // dans un contexte séparé et pourrait court-circuiter nos mocks page.route().
@@ -42,7 +42,7 @@ test.describe("Comportement hors-ligne", () => {
 
     await expect(page.locator("#updated")).toContainText("hors-ligne");
     await expect(page.locator("#updated")).toContainText(MOCK_DATE);
-    await expect(subOf(page, "usd")).toHaveText(`1 EUR = ${fmt(eurRates.usd)}`);
+    await expect(subOf(page, "usd")).toHaveText(`1 EUR = ${fmt(effRate("eur", "eur", "usd"))} · frais ${FEE_LABEL}`);
   });
 
   test("reste utilisable (calculatrice) en mode hors-ligne avec cache", async ({ page }) => {
@@ -54,7 +54,7 @@ test.describe("Comportement hors-ligne", () => {
     await expect(page.locator("#updated")).toContainText("hors-ligne");
 
     await pressKeys(page, ["1", "0", "0", "eq"]);
-    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurRates.usd));
+    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * effRate("eur", "eur", "usd")));
   });
 
   test("retombe sur le dernier instantané connu même pour une base jamais fetchée directement", async ({ page }) => {
@@ -68,8 +68,8 @@ test.describe("Comportement hors-ligne", () => {
     await page.goto("/");
 
     await expect(page.locator("#updated")).toContainText("hors-ligne");
-    const derivedEurUsd = crossRates("eur").usd; // attendu, calculé indépendamment via le pivot USD
-    await expect(subOf(page, "usd")).toHaveText(`1 EUR = ${fmt(derivedEurUsd)}`);
+    const derivedEurUsd = effRate("eur", "eur", "usd"); // attendu, calculé indépendamment via le pivot USD
+    await expect(subOf(page, "usd")).toHaveText(`1 EUR = ${fmt(derivedEurUsd)} · frais ${FEE_LABEL}`);
   });
 
   test("affiche un message clair quand aucun taux n'est en cache et le réseau est indisponible", async ({ page }) => {

@@ -2,7 +2,7 @@ const { test, expect } = require("@playwright/test");
 const { mockCurrencyApi } = require("./utils/api-mock");
 const { rowByCode, amountOf, subOf, pressKeys, pressKey } = require("./utils/dom");
 const { fmt, fmtBase, prettyExpr } = require("./utils/format");
-const { MOCK_DATE, crossRates } = require("./fixtures/currency-data");
+const { MOCK_DATE, FEE_LABEL, crossRates, effRate } = require("./fixtures/currency-data");
 
 test.describe("Conversion entre devises", () => {
   test.beforeEach(async ({ page }) => {
@@ -11,18 +11,19 @@ test.describe("Conversion entre devises", () => {
   });
 
   test("un simple nombre convertit les autres lignes en temps réel, sans =", async ({ page }) => {
-    const eurRates = crossRates("eur");
+    const eurUsd = effRate("eur", "eur", "usd");
+    const eurGbp = effRate("eur", "eur", "gbp");
     await pressKeys(page, ["1", "0"]);
-    await expect(amountOf(page, "usd")).toHaveText(fmt(10 * eurRates.usd));
-    await expect(amountOf(page, "gbp")).toHaveText(fmt(10 * eurRates.gbp));
+    await expect(amountOf(page, "usd")).toHaveText(fmt(10 * eurUsd));
+    await expect(amountOf(page, "gbp")).toHaveText(fmt(10 * eurGbp));
 
     await pressKeys(page, ["0"]);
-    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurRates.usd));
-    await expect(amountOf(page, "gbp")).toHaveText(fmt(100 * eurRates.gbp));
+    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurUsd));
+    await expect(amountOf(page, "gbp")).toHaveText(fmt(100 * eurGbp));
   });
 
   test("dès qu'une opération est entamée (+ - * /), les autres lignes se figent jusqu'à =", async ({ page }) => {
-    const eurUsd = crossRates("eur").usd;
+    const eurUsd = effRate("eur", "eur", "usd");
     await pressKeys(page, ["1", "0", "0"]);
     await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurUsd)); // live
 
@@ -34,7 +35,7 @@ test.describe("Conversion entre devises", () => {
   });
 
   test("après =, retaper un nouveau calcul ne recalcule pas tant qu'on n'a pas revalidé", async ({ page }) => {
-    const eurUsd = crossRates("eur").usd;
+    const eurUsd = effRate("eur", "eur", "usd");
     await pressKeys(page, ["1", "0", "0", "eq"]);
     await expect(amountOf(page, "usd")).toHaveText(fmt(100 * eurUsd));
 
@@ -46,14 +47,14 @@ test.describe("Conversion entre devises", () => {
   });
 
   test("un nombre négatif (signe -) convertit aussi en temps réel", async ({ page }) => {
-    const eurUsd = crossRates("eur").usd;
+    const eurUsd = effRate("eur", "eur", "usd");
     await pressKeys(page, ["-", "5"]);
     await expect(amountOf(page, "usd")).toHaveText(fmt(-5 * eurUsd));
   });
 
-  test("affiche le taux de référence sous chaque devise convertie", async ({ page }) => {
-    const eurUsd = crossRates("eur").usd;
-    await expect(subOf(page, "usd")).toHaveText(`1 EUR = ${fmt(eurUsd)}`);
+  test("affiche le taux de référence (frais inclus) sous chaque devise convertie", async ({ page }) => {
+    const eurUsd = effRate("eur", "eur", "usd");
+    await expect(subOf(page, "usd")).toHaveText(`1 EUR = ${fmt(eurUsd)} · frais ${FEE_LABEL}`);
   });
 
   test("n'affiche pas de taux de référence pour la ligne active", async ({ page }) => {
@@ -70,7 +71,7 @@ test.describe("Conversion entre devises", () => {
 
   test("un clic sur une ligne change le focus de saisie sans toucher à la base ni à l'ordre", async ({ page }) => {
     await pressKeys(page, ["1", "0", "0", "eq"]);
-    const eurUsd = crossRates("eur").usd;
+    const eurUsd = effRate("eur", "eur", "usd");
     const converted = Math.round(100 * eurUsd * 1e6) / 1e6;
 
     await rowByCode(page, "usd").click();
@@ -91,11 +92,15 @@ test.describe("Conversion entre devises", () => {
     await expect(amountOf(page, "usd")).toHaveText(prettyExpr(String(converted)));
   });
 
-  test("après un changement de focus, la ligne désormais inactive montre une conversion cohérente (aller-retour)", async ({ page }) => {
+  test("un aller-retour repasse par les frais dans les deux sens (2 % à l'aller, 2 % au retour)", async ({ page }) => {
     await pressKeys(page, ["1", "0", "0", "eq"]);
     await rowByCode(page, "usd").click(); // focus -> usd, valeur reconvertie automatiquement
 
-    await expect(amountOf(page, "eur")).toHaveText(fmt(100));
+    // 100 EUR -> USD ampute 2 %, le retour USD -> EUR en rajoute 2 % : on ne
+    // retombe volontairement pas sur 100, comme avec une vraie carte.
+    const roundTrip = 100 * effRate("eur", "eur", "usd") * effRate("eur", "usd", "eur");
+    expect(fmtBase(roundTrip)).toBe("99,96");
+    await expect(amountOf(page, "eur")).toHaveText(fmtBase(roundTrip));
   });
 
   test("changer de focus sans montant saisi affiche 0", async ({ page }) => {
@@ -119,7 +124,8 @@ test.describe("Conversion entre devises", () => {
     // base = usd, pour que la devise ciblée (eur) ne soit pas la devise principale
     // et ne subisse donc pas son plafond à 2 décimales (voir tests fmtBase plus bas).
     await page.goto("/#usd,vnd,eur");
-    const vndEur = crossRates("usd").eur / crossRates("usd").vnd; // très petit : eur est ~26000x plus fort que vnd
+    // Aucun frais ici : ni vnd ni eur n'est la devise principale (usd).
+    const vndEur = effRate("usd", "vnd", "eur"); // très petit : eur est ~26000x plus fort que vnd
     await rowByCode(page, "vnd").click(); // focus -> vnd, sans montant saisi
     await pressKeys(page, ["1"]);
     await expect(amountOf(page, "eur")).toHaveText(fmt(vndEur));
@@ -128,7 +134,7 @@ test.describe("Conversion entre devises", () => {
 
   test("le premier chiffre juste après un changement de ligne active remplace le montant reconverti", async ({ page }) => {
     await pressKeys(page, ["1", "0", "0"]);
-    const eurUsd = crossRates("eur").usd;
+    const eurUsd = effRate("eur", "eur", "usd");
     const converted = Math.round(100 * eurUsd * 1e6) / 1e6;
 
     await rowByCode(page, "usd").click();
@@ -170,19 +176,68 @@ test.describe("Conversion entre devises", () => {
   });
 
   test("la devise principale arrondit toujours au centime supérieur, jamais plus de 2 décimales", async ({ page }) => {
-    const gbpEur = 1 / crossRates("eur").gbp;
+    const gbpEur = effRate("eur", "gbp", "eur");
     await rowByCode(page, "gbp").click();
-    await pressKeys(page, ["7"]); // 7 GBP -> ~8,1519 EUR : l'arrondi classique donnerait 8,15
+    await pressKeys(page, ["7"]); // 7 GBP -> ~8,3149 EUR frais inclus : l'arrondi classique donnerait 8,31
     const expected = fmtBase(7 * gbpEur);
-    expect(expected).toBe("8,16"); // vérifie qu'on teste bien un cas où l'arrondi supérieur diffère de l'arrondi classique
+    expect(expected).toBe("8,32"); // vérifie qu'on teste bien un cas où l'arrondi supérieur diffère de l'arrondi classique
     await expect(amountOf(page, "eur")).toHaveText(expected);
   });
 
   test("la devise principale plafonne à 2 décimales même pour un montant < 1", async ({ page }) => {
-    const gbpEur = 1 / crossRates("eur").gbp;
+    const gbpEur = effRate("eur", "gbp", "eur");
     await rowByCode(page, "gbp").click();
-    await pressKeys(page, [".", "5"]); // 0,5 GBP -> ~0,5823 EUR, fmt() normal irait à 3 décimales
-    await expect(amountOf(page, "eur")).toHaveText(fmtBase(0.5 * gbpEur));
-    await expect(amountOf(page, "eur")).toHaveText("0,59");
+    await pressKeys(page, [".", "4"]); // 0,4 GBP -> ~0,4751 EUR, fmt() normal irait à 3 décimales
+    await expect(amountOf(page, "eur")).toHaveText(fmtBase(0.4 * gbpEur));
+    await expect(amountOf(page, "eur")).toHaveText("0,48");
+  });
+});
+
+test.describe("Frais de conversion de la devise principale", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockCurrencyApi(page);
+  });
+
+  test("depuis la devise principale, on reçoit 2 % de moins", async ({ page }) => {
+    await page.goto("/"); // base eur, saisie sur eur
+    const raw = crossRates("eur").usd;
+    await pressKeys(page, ["1", "0", "0"]);
+    await expect(amountOf(page, "usd")).toHaveText(fmt(100 * raw * 0.98));
+    await expect(amountOf(page, "usd")).not.toHaveText(fmt(100 * raw));
+  });
+
+  test("vers la devise principale, la dépense coûte 2 % de plus", async ({ page }) => {
+    await page.goto("/");
+    const raw = 1 / crossRates("eur").usd;
+    await rowByCode(page, "usd").click();
+    await pressKeys(page, ["1", "0", "0"]);
+    await expect(amountOf(page, "eur")).toHaveText(fmtBase(100 * raw * 1.02));
+    await expect(amountOf(page, "eur")).not.toHaveText(fmtBase(100 * raw));
+  });
+
+  test("une paire qui ne touche pas la devise principale reste au taux brut", async ({ page }) => {
+    await page.goto("/#eur,usd,gbp"); // base eur : la paire usd -> gbp l'ignore
+    const table = crossRates("eur");
+    const usdGbp = table.gbp / table.usd;
+    await rowByCode(page, "usd").click();
+    await pressKeys(page, ["1", "0", "0"]);
+    await expect(amountOf(page, "gbp")).toHaveText(fmt(100 * usdGbp));
+    await expect(subOf(page, "gbp")).toHaveText(`1 USD = ${fmt(usdGbp)}`);
+  });
+
+  test("changer de devise principale déplace les frais avec elle", async ({ page }) => {
+    await page.goto("/#usd,eur,gbp"); // base usd
+    const table = crossRates("usd");
+    const usdGbp = table.gbp;
+    const eurGbp = table.gbp / table.eur;
+    await pressKeys(page, ["1", "0", "0"]);
+    // usd est désormais la base : c'est cette paire qui porte les frais…
+    await expect(amountOf(page, "gbp")).toHaveText(fmt(100 * usdGbp * 0.98));
+    await expect(subOf(page, "gbp")).toContainText(`· frais ${FEE_LABEL}`);
+    // …et eur -> gbp, qui les portait quand eur était base, est au taux brut.
+    await rowByCode(page, "eur").click();
+    await pressKeys(page, ["1", "0", "0"]);
+    await expect(amountOf(page, "gbp")).toHaveText(fmt(100 * eurGbp));
+    await expect(subOf(page, "gbp")).toHaveText(`1 EUR = ${fmt(eurGbp)}`);
   });
 });

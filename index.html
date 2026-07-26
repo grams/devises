@@ -383,6 +383,19 @@ function fmtBase(n){
   return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:2}).format(v);
 }
 
+/* ---------- Frais de conversion ---------- */
+// Frais bancaires prélevés dès que la devise principale est d'un côté de la
+// conversion, toujours dans le sens défavorable : on reçoit 2 % de moins en
+// devise étrangère, et une dépense étrangère coûte 2 % de plus en devise
+// principale. Un aller-retour ne retombe donc pas sur le montant de départ,
+// exactement comme avec une vraie carte. Les paires qui ne touchent pas la
+// base (ex. usd -> gbp quand la base est eur) restent au taux brut.
+const FEE = 0.02;
+const FEE_LABEL = new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(FEE*100) + " %";
+function feeApplies(fromCode, toCode){
+  return fromCode!==toCode && (fromCode===base || toCode===base);
+}
+
 /* ---------- Taux croisés (indépendants du fetch réseau, dérivés de `rates`) ---------- */
 function rateOf(code){
   return code===base ? 1 : rates[code];
@@ -391,7 +404,10 @@ function crossRate(fromCode, toCode){
   if(fromCode===toCode) return 1;
   const rf = rateOf(fromCode), rt = rateOf(toCode);
   if(rf==null || rt==null) return null;
-  return rt / rf;
+  const raw = rt / rf;
+  if(fromCode===base) return raw * (1 - FEE);  // on reçoit moins de devise étrangère
+  if(toCode===base)   return raw * (1 + FEE);  // la dépense coûte plus en devise principale
+  return raw;
 }
 
 /* ---------- Rendu ---------- */
@@ -421,7 +437,7 @@ function render(){
       </div>
       <div>
         <div class="amount">${amount}</div>
-        ${(!isActive && rate!=null) ? `<div class="sub">1 ${active.toUpperCase()} = ${fmt(rate)}</div>`:''}
+        ${(!isActive && rate!=null) ? `<div class="sub">1 ${active.toUpperCase()} = ${fmt(rate)}${feeApplies(active,code)?` · frais ${FEE_LABEL}`:''}</div>`:''}
       </div>`;
     row.addEventListener("click", ()=>{ if(!isActive) setActive(code); });
     rowsEl.appendChild(row);
