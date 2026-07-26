@@ -224,6 +224,21 @@ let committed = 0;     // dernier montant confirmé (au =, ou en changeant de li
 let justFocused = true; // true tant qu'aucun chiffre n'a été tapé depuis le dernier changement de ligne active :
                          // le premier chiffre remplace le montant reconverti au lieu de s'y accoler
 
+/* ---------- Ligne de saisie par défaut ---------- */
+// À l'ouverture on part quasi toujours d'un prix lu en devise étrangère (une
+// étiquette, une addition) pour savoir ce qu'il coûte : la saisie se pose donc
+// sur la première devise non principale — la 2e ligne — plutôt que sur la base.
+function defaultEntry(){
+  return currencies.find(c => c !== base) || base;
+}
+// Repose la saisie sur cette ligne. `justFocused` fait que le premier chiffre
+// tapé remplacera le montant affiché au lieu de s'y accoler.
+function resetEntry(){
+  const target = defaultEntry();
+  if(target === active){ justFocused = true; render(); return; }
+  setActive(target);
+}
+
 /* ---------- Hash <-> état ---------- */
 // L'icône PWA installée ouvre toujours le start_url du manifest, sans hash :
 // on retombe alors sur la dernière sélection de devises connue (mémorisée
@@ -239,7 +254,7 @@ function parseHash(){
     currencies = [...new Set(list)];
     base = currencies[0];
   }
-  active = base;
+  active = defaultEntry();
   committed = 0;
   justFocused = true;
 }
@@ -528,12 +543,34 @@ window.addEventListener("keydown", e=>{
   if(/^[0-9]$/.test(k)||/^[+\-*/]$/.test(k)||k==="%"||["eq","back","C","."].includes(k)){ press(k); e.preventDefault(); }
 });
 
+/* ---------- Reprise après une longue absence ---------- */
+// Revenir sur l'app après une vraie pause, c'est repartir sur une nouvelle
+// conversion : on repose alors la saisie sur la 2e ligne, comme à l'ouverture.
+// Un aller-retour rapide (aller lire un message, revenir) ne doit en revanche
+// rien casser d'un calcul en cours, d'où le seuil d'inactivité.
+const IDLE_MS = 3*60*1000;
+let lastAction = Date.now();
+const markAction = ()=>{ lastAction = Date.now(); };
+// En capture, pour compter aussi les gestes sur le pavé et le panneau « Gérer ».
+document.addEventListener("pointerdown", markAction, true);
+document.addEventListener("keydown", markAction, true);
+// visibilitychange couvre le changement d'onglet et le retour d'arrière-plan
+// sur mobile ; focus couvre le passage d'une fenêtre à l'autre sur desktop,
+// où l'onglet reste « visible ».
+function onResume(){
+  if(document.visibilityState !== "visible") return;
+  if(Date.now() - lastAction < IDLE_MS) return;
+  resetEntry();
+}
+document.addEventListener("visibilitychange", onResume);
+window.addEventListener("focus", onResume);
+
 /* ---------- Sheet « Gérer » ---------- */
 const sheet=document.getElementById("sheet"), sheetBg=document.getElementById("sheetBg");
 function openSheet(){ renderPicked(); renderResults(""); sheet.classList.add("open"); sheetBg.classList.add("open"); }
 function closeSheet(){
   sheet.classList.remove("open"); sheetBg.classList.remove("open");
-  if(!currencies.includes(active)){ active = base; justFocused = true; } // filet de sécurité si la devise active a été retirée
+  if(!currencies.includes(active)){ active = defaultEntry(); justFocused = true; } // filet de sécurité si la devise active a été retirée
   loadRates();
 }
 document.getElementById("manageBtn").addEventListener("click", openSheet);

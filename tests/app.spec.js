@@ -20,7 +20,7 @@ test.describe("Chargement général de l'app", () => {
     await expect(rows).toHaveCount(3);
 
     await expect(rowByCode(page, "eur")).toHaveClass(/base/);
-    await expect(rowByCode(page, "eur")).toHaveClass(/active/); // focus de saisie par défaut = base
+    await expect(rowByCode(page, "eur")).not.toHaveClass(/active/); // focus de saisie par défaut = 2e ligne
     await expect(amountOf(page, "eur")).toHaveText("0");
     await expect(rowByCode(page, "eur").locator(".tag")).toHaveText("BASE");
 

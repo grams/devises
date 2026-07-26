@@ -16,6 +16,12 @@ Chaque configuration = un marque-page, par exemple :
 
 L'app met à jour le hash toute seule quand on ajoute/retire/change de devise — il suffit de re-bookmarker pour figer une nouvelle config.
 
+## Ligne de saisie
+
+À l'ouverture, la saisie se pose sur la **première devise non principale** — la 2e ligne de l'écran — parce qu'on part presque toujours d'un prix lu en devise étrangère pour savoir ce qu'il coûte. Un clic sur une autre ligne déplace la saisie ; ni la base ni l'ordre ne changent (ça, c'est « Gérer »).
+
+Revenir sur l'app après **plus de 3 minutes** sans rien toucher repose la saisie sur cette même 2e ligne, comme une nouvelle recherche de prix. En deçà du seuil, un aller-retour rapide (aller lire un message, revenir) ne casse pas le calcul en cours. Le montant affiché reste visible dans les deux cas : c'est le premier chiffre tapé qui le remplace.
+
 ## Frais de conversion
 
 Un forfait de **2 %** s'applique à toute conversion qui touche la **devise principale** (la première du hash), toujours dans le sens défavorable :

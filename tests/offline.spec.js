@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { abortCurrencyApi } = require("./utils/api-mock");
-const { amountOf, subOf, pressKeys } = require("./utils/dom");
+const { rowByCode, amountOf, subOf, pressKeys } = require("./utils/dom");
 const { fmt } = require("./utils/format");
 const { MOCK_DATE, FEE_LABEL, crossRates, effRate } = require("./fixtures/currency-data");
 
@@ -39,6 +39,7 @@ test.describe("Comportement hors-ligne", () => {
     await abortCurrencyApi(page);
 
     await page.goto("/");
+    await rowByCode(page, "eur").click(); // saisie depuis la base, pour lire le taux eur -> usd
 
     await expect(page.locator("#updated")).toContainText("hors-ligne");
     await expect(page.locator("#updated")).toContainText(MOCK_DATE);
@@ -51,6 +52,7 @@ test.describe("Comportement hors-ligne", () => {
     await abortCurrencyApi(page);
 
     await page.goto("/");
+    await rowByCode(page, "eur").click(); // saisie depuis la base
     await expect(page.locator("#updated")).toContainText("hors-ligne");
 
     await pressKeys(page, ["1", "0", "0", "eq"]);
@@ -66,6 +68,7 @@ test.describe("Comportement hors-ligne", () => {
     await abortCurrencyApi(page);
 
     await page.goto("/");
+    await rowByCode(page, "eur").click(); // saisie depuis la base, pour lire le taux eur -> usd
 
     await expect(page.locator("#updated")).toContainText("hors-ligne");
     const derivedEurUsd = effRate("eur", "eur", "usd"); // attendu, calculé indépendamment via le pivot USD
@@ -78,6 +81,8 @@ test.describe("Comportement hors-ligne", () => {
     await page.goto("/");
 
     await expect(page.locator("#updated")).toContainText("pas de taux");
-    await expect(amountOf(page, "usd")).toHaveText("—");
+    // usd porte la saisie (2e ligne) : les lignes converties, elles, n'ont rien à afficher.
+    await expect(amountOf(page, "eur")).toHaveText("—");
+    await expect(amountOf(page, "gbp")).toHaveText("—");
   });
 });

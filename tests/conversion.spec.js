@@ -7,7 +7,10 @@ const { MOCK_DATE, FEE_LABEL, crossRates, effRate } = require("./fixtures/curren
 test.describe("Conversion entre devises", () => {
   test.beforeEach(async ({ page }) => {
     await mockCurrencyApi(page);
-    await page.goto("/"); // eur (base + focus de saisie), usd, gbp
+    await page.goto("/"); // eur (base), usd, gbp
+    // Par défaut la saisie se pose sur usd (2e ligne) ; ce bloc décrit la
+    // saisie depuis la devise principale, on l'y ramène explicitement.
+    await rowByCode(page, "eur").click();
   });
 
   test("un simple nombre convertit les autres lignes en temps réel, sans =", async ({ page }) => {
@@ -126,7 +129,7 @@ test.describe("Conversion entre devises", () => {
     await page.goto("/#usd,vnd,eur");
     // Aucun frais ici : ni vnd ni eur n'est la devise principale (usd).
     const vndEur = effRate("usd", "vnd", "eur"); // très petit : eur est ~26000x plus fort que vnd
-    await rowByCode(page, "vnd").click(); // focus -> vnd, sans montant saisi
+    await rowByCode(page, "vnd").click(); // vnd porte déjà la saisie (2e ligne), sans montant
     await pressKeys(page, ["1"]);
     await expect(amountOf(page, "eur")).toHaveText(fmt(vndEur));
     await expect(amountOf(page, "eur")).not.toHaveText("0");
@@ -199,7 +202,8 @@ test.describe("Frais de conversion de la devise principale", () => {
   });
 
   test("depuis la devise principale, on reçoit 2 % de moins", async ({ page }) => {
-    await page.goto("/"); // base eur, saisie sur eur
+    await page.goto("/");
+    await rowByCode(page, "eur").click(); // saisie depuis la base
     const raw = crossRates("eur").usd;
     await pressKeys(page, ["1", "0", "0"]);
     await expect(amountOf(page, "usd")).toHaveText(fmt(100 * raw * 0.98));
@@ -227,6 +231,7 @@ test.describe("Frais de conversion de la devise principale", () => {
 
   test("changer de devise principale déplace les frais avec elle", async ({ page }) => {
     await page.goto("/#usd,eur,gbp"); // base usd
+    await rowByCode(page, "usd").click(); // saisie depuis la base
     const table = crossRates("usd");
     const usdGbp = table.gbp;
     const eurGbp = table.gbp / table.eur;
