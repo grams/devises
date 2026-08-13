@@ -63,23 +63,29 @@ function crossRates(base) {
   return out;
 }
 
-// Frais de conversion appliqués par l'app (voir FEE dans index.html).
-const FEE = 0.02;
+// Taux de frais par défaut de l'app (DEFAULT_FEE_PCT dans index.html), en %.
+const DEFAULT_FEE_PCT = 2;
 const FEE_LABEL = "2 %";
+
+/** Mention « frais X % » telle que l'app la formate (séparateur français). */
+function feeLabel(pct = DEFAULT_FEE_PCT) {
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(pct) + " %";
+}
 
 // Reproduit crossRate() de index.html : l'app ne connaît que la table servie
 // pour `base`, et dérive tout le reste de celle-ci ; les frais s'appliquent
 // dès que la devise principale est d'un côté de la conversion.
-function effRate(base, from, to) {
+function effRate(base, from, to, feePct = DEFAULT_FEE_PCT) {
   if (from === to) return 1;
   const table = crossRates(base);
   const rf = from === base ? 1 : table[from];
   const rt = to === base ? 1 : table[to];
   if (rf == null || rt == null) return null;
   const raw = rt / rf;
-  if (from === base) return raw * (1 - FEE);
-  if (to === base) return raw * (1 + FEE);
+  const fee = feePct / 100;
+  if (from === base) return raw * (1 - fee);
+  if (to === base) return raw * (1 + fee);
   return raw;
 }
 
-module.exports = { MOCK_DATE, NAMES, USD_RATES, FEE, FEE_LABEL, crossRates, effRate };
+module.exports = { MOCK_DATE, NAMES, USD_RATES, DEFAULT_FEE_PCT, FEE_LABEL, feeLabel, crossRates, effRate };

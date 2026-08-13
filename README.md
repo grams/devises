@@ -4,7 +4,7 @@ Convertisseur de devises **statique**, hors-ligne, configurable par l'URL. Aucun
 
 - Taux : [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api) via jsDelivr (licence CC0, 200+ devises), avec bascule automatique sur le miroir Cloudflare Pages si jsDelivr est injoignable.
 - PWA installable (icône plein écran), fonctionne hors-ligne grâce au cache des derniers taux.
-- L'état est encodé dans le **hash** de l'URL : `#eur,usd,gbp`. La première devise est la **base** (celle dans laquelle on saisit), les suivantes sont affichées en dessous.
+- L'état est encodé dans le **hash** de l'URL : `#eur,usd,gbp`. La première devise est la **base** (la devise principale), les suivantes sont affichées en dessous, dans l'ordre. Un taux de frais non standard s'y ajoute en jeton suffixé de `%` : `#eur,usd,gbp,3.5%`.
 
 ## Bookmarks
 
@@ -13,8 +13,11 @@ Chaque configuration = un marque-page, par exemple :
 - `…/devises/#eur,usd`
 - `…/devises/#eur,gbp,jpy`
 - `…/devises/#usd,cad`
+- `…/devises/#eur,vnd,thb,1.5%` — même sélection, frais à 1,5 %
 
-L'app met à jour le hash toute seule quand on ajoute/retire/change de devise — il suffit de re-bookmarker pour figer une nouvelle config.
+L'app met à jour le hash toute seule quand on ajoute, retire, réordonne ou change de devise, et quand on change le taux de frais — il suffit de re-bookmarker pour figer une nouvelle config.
+
+Dans « Gérer les devises », les flèches **▲ ▼** réordonnent les devises non principales. La base garde toujours la 1re place : c'est le contrat du hash (première devise = base), et « Base » sur une autre ligne l'y amène.
 
 ## Ligne de saisie
 
@@ -24,14 +27,14 @@ Revenir sur l'app après **plus de 3 minutes** sans rien toucher repose la saisi
 
 ## Frais de conversion
 
-Un forfait de **2 %** s'applique à toute conversion qui touche la **devise principale** (la première du hash), toujours dans le sens défavorable :
+Un forfait — **2 %** par défaut — s'applique à toute conversion qui touche la **devise principale** (la première du hash), toujours dans le sens défavorable :
 
 - devise principale → devise étrangère : on reçoit 2 % de moins ;
 - devise étrangère → devise principale : la dépense coûte 2 % de plus.
 
 Un aller-retour ne retombe donc pas sur le montant de départ — c'est voulu, comme avec une vraie carte. Les paires qui n'impliquent pas la devise principale (ex. `usd → gbp` quand la base est `eur`) restent au taux brut. Le taux affiché sous chaque ligne est le **taux effectif**, frais inclus, signalé par la mention « frais 2 % ».
 
-Pour ajuster le taux, modifier la constante `FEE` dans `index.html`.
+Le taux se règle dans « Gérer les devises » (0 à 100 %, `0` désactive les frais et la mention). Il voyage dans le hash dès qu'il diffère du défaut — `#eur,usd,gbp,3.5%` — et le jeton est omis à 2 % pour garder les URLs courtes. Le séparateur décimal y est le **point**, la virgule séparant déjà les devises. Un bookmark est autosuffisant : sans jeton, il vaut 2 %, jamais « le dernier taux réglé ». Le lancement par l'icône PWA (sans hash) reprend, lui, la dernière config connue — devises et taux.
 
 ## Déploiement sur GitHub Pages
 

@@ -2,6 +2,11 @@ const { test, expect } = require("@playwright/test");
 const { mockCurrencyApi } = require("./utils/api-mock");
 const { rowByCode } = require("./utils/dom");
 
+/** Pastille du panneau « Gérer » correspondant à un code (ex: "USD"). */
+function pillOf(page, CODE) {
+  return page.locator("#picked .pill").filter({ has: page.locator(".pcode", { hasText: CODE }) });
+}
+
 test.describe("Panneau « Gérer les devises »", () => {
   test.beforeEach(async ({ page }) => {
     await mockCurrencyApi(page);
@@ -89,6 +94,64 @@ test.describe("Panneau « Gérer les devises »", () => {
     await page.locator("#doneBtn").click();
     await expect(rowByCode(page, "gbp")).toHaveCount(0);
     await expect(page.locator("#rows .row")).toHaveCount(2);
+  });
+
+  test("réordonne les devises non principales avec les flèches", async ({ page }) => {
+    await page.locator("#manageBtn").click();
+    const codes = page.locator("#picked .pcode");
+    await expect(codes).toHaveText(["EUR", "USD", "GBP"]);
+
+    await pillOf(page, "GBP").locator("button.up").click();
+    await expect(codes).toHaveText(["EUR", "GBP", "USD"]);
+
+    await page.locator("#doneBtn").click();
+    const rows = page.locator("#rows .row .code");
+    await expect(rows).toHaveText([/^EUR/, /^GBP/, /^USD/]);
+    await expect(page).toHaveURL(/#eur,gbp,usd$/);
+  });
+
+  test("la flèche « descendre » déplace dans l'autre sens", async ({ page }) => {
+    await page.locator("#manageBtn").click();
+    await pillOf(page, "USD").locator("button.down").click();
+    await expect(page.locator("#picked .pcode")).toHaveText(["EUR", "GBP", "USD"]);
+  });
+
+  test("réordonner ne touche ni à la base ni au taux de frais", async ({ page }) => {
+    await page.locator("#manageBtn").click();
+    await pillOf(page, "GBP").locator("button.up").click();
+    await expect(pillOf(page, "EUR").locator(".isbase")).toHaveText("BASE");
+
+    await page.locator("#doneBtn").click();
+    await expect(rowByCode(page, "eur")).toHaveClass(/base/);
+    await expect(page).toHaveURL(/#eur,gbp,usd$/); // pas de jeton de frais : toujours 2 %
+  });
+
+  test("la devise principale n'a pas de flèches, et les extrémités sont bloquées", async ({ page }) => {
+    await page.locator("#manageBtn").click();
+
+    // La base garde toujours la 1re place : rien à déplacer.
+    await expect(pillOf(page, "EUR").locator("button.up")).toHaveCount(0);
+    await expect(pillOf(page, "EUR").locator("button.down")).toHaveCount(0);
+
+    // Première non principale : on ne peut pas remonter au-dessus de la base.
+    await expect(pillOf(page, "USD").locator("button.up")).toBeDisabled();
+    await expect(pillOf(page, "USD").locator("button.down")).toBeEnabled();
+
+    // Dernière de la liste : rien en dessous.
+    await expect(pillOf(page, "GBP").locator("button.up")).toBeEnabled();
+    await expect(pillOf(page, "GBP").locator("button.down")).toBeDisabled();
+  });
+
+  test("changer de base rend son ancienne place réordonnable", async ({ page }) => {
+    await page.locator("#manageBtn").click();
+    await pillOf(page, "USD").locator("button.setbase").click();
+    await expect(page.locator("#picked .pcode")).toHaveText(["USD", "EUR", "GBP"]);
+
+    // eur est passée en 2e : c'est elle qui a désormais la flèche « monter » bloquée.
+    await expect(pillOf(page, "USD").locator("button.up")).toHaveCount(0);
+    await expect(pillOf(page, "EUR").locator("button.up")).toBeDisabled();
+    await pillOf(page, "EUR").locator("button.down").click();
+    await expect(page.locator("#picked .pcode")).toHaveText(["USD", "GBP", "EUR"]);
   });
 
   test("change la devise de base depuis le panneau", async ({ page }) => {

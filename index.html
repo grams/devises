@@ -87,13 +87,28 @@
   .sheet h2{margin:0; padding:16px 18px 6px; font-size:16px}
   .sheet .hint{padding:0 18px 8px; color:var(--muted); font-size:12px}
   .picked{padding:6px 12px; display:flex; flex-direction:column; gap:6px; overflow:auto; max-height:38dvh; flex:0 0 auto}
-  .pill{display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:10px; background:#0d1519; border:1px solid var(--line); border-radius:10px; padding:9px 12px}
+  .pill{display:grid; grid-template-columns:auto auto 1fr auto auto; align-items:center; gap:8px; background:#0d1519; border:1px solid var(--line); border-radius:10px; padding:8px 10px}
   .pill .pcode{font-weight:700; font-family:var(--mono)}
   .pill .pname{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .pill button{border:none; background:transparent; color:var(--muted); font-size:13px; padding:6px 8px; cursor:pointer; font-family:var(--sans)}
+  .pill button{border:none; background:transparent; color:var(--muted); font-size:13px; padding:6px 7px; cursor:pointer; font-family:var(--sans)}
   .pill .setbase{color:var(--gold)}
   .pill .rm{color:var(--danger)}
   .pill .isbase{color:var(--gold); font-size:10px; font-weight:800; letter-spacing:.1em}
+  /* Réordonnancement : la base garde toujours la 1re place, les flèches ne
+     déplacent donc que les devises suivantes (colonne vide sur la base, pour
+     que les libellés restent alignés d'une ligne à l'autre). */
+  .pill .reorder{display:flex; flex-direction:column; gap:1px; width:28px}
+  .pill .reorder button{padding:4px 0; font-size:13px; line-height:1.1; color:var(--text)}
+  .pill .reorder button:disabled{color:#2e4149; cursor:default}
+
+  .option{margin:2px 12px 0; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:#0d1519; border:1px solid var(--line); border-radius:10px}
+  .option label{font-size:13px}
+  .option .osub{font-size:11px; color:var(--muted); margin-top:2px}
+  .option .field{display:flex; align-items:center; gap:6px; flex:none}
+  .option input{width:74px; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--ink);
+    color:var(--text); font-family:var(--mono); font-size:15px; text-align:right}
+  .option .unit{font-family:var(--mono); font-size:13px; color:var(--muted)}
   .search{margin:10px 12px 6px}
   .search input{width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line); background:#0d1519; color:var(--text); font-size:15px; font-family:var(--sans)}
   .results{overflow:auto; padding:0 12px 14px; display:flex; flex-direction:column; gap:4px; flex:1 1 0; min-height:120px}
@@ -149,8 +164,18 @@
   <div class="sheet-bg" id="sheetBg"></div>
   <div class="sheet" id="sheet">
     <h2>Gérer les devises</h2>
-    <div class="hint">Tape sur « Base » pour choisir la devise dans laquelle tu saisis.</div>
+    <div class="hint">« Base » = ta devise principale, celle qui porte les frais ; elle reste en tête de liste. Les flèches réordonnent les autres.</div>
     <div class="picked" id="picked"></div>
+    <div class="option">
+      <div>
+        <label for="feeInput">Frais de conversion</label>
+        <div class="osub">appliqués aux échanges avec la base</div>
+      </div>
+      <div class="field">
+        <input id="feeInput" type="number" inputmode="decimal" min="0" max="100" step="0.1" autocomplete="off">
+        <span class="unit">%</span>
+      </div>
+    </div>
     <div class="search"><input id="search" placeholder="Ajouter une devise…" autocomplete="off"></div>
     <div class="results" id="results"></div>
     <button class="done" id="doneBtn">Terminé</button>
@@ -224,6 +249,28 @@ let committed = 0;     // dernier montant confirmé (au =, ou en changeant de li
 let justFocused = true; // true tant qu'aucun chiffre n'a été tapé depuis le dernier changement de ligne active :
                          // le premier chiffre remplace le montant reconverti au lieu de s'y accoler
 
+/* ---------- Frais de conversion ---------- */
+// Frais bancaires prélevés dès que la devise principale est d'un côté de la
+// conversion, toujours dans le sens défavorable : on reçoit `feePct` % de
+// moins en devise étrangère, et une dépense étrangère coûte `feePct` % de plus
+// en devise principale. Un aller-retour ne retombe donc pas sur le montant de
+// départ, exactement comme avec une vraie carte. Les paires qui ne touchent
+// pas la base (ex. usd -> gbp quand la base est eur) restent au taux brut.
+// Réglable dans « Gérer » et transporté par le hash (voir parseHash).
+const DEFAULT_FEE_PCT = 2;
+let feePct = DEFAULT_FEE_PCT;
+// Bornes larges mais finies : au-delà de 100 % le montant reçu deviendrait
+// négatif, ce qui n'a aucun sens ici.
+function clampFee(pct){
+  if(!isFinite(pct)) return DEFAULT_FEE_PCT;
+  return Math.min(100, Math.max(0, Math.round(pct*100)/100));
+}
+function feeRate(){ return feePct/100; }
+function feeLabel(){ return new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(feePct) + " %"; }
+function feeApplies(fromCode, toCode){
+  return feePct!==0 && fromCode!==toCode && (fromCode===base || toCode===base);
+}
+
 /* ---------- Ligne de saisie par défaut ---------- */
 // À l'ouverture on part quasi toujours d'un prix lu en devise étrangère (une
 // étiquette, une addition) pour savoir ce qu'il coûte : la saisie se pose donc
@@ -241,27 +288,66 @@ function resetEntry(){
 
 /* ---------- Hash <-> état ---------- */
 // L'icône PWA installée ouvre toujours le start_url du manifest, sans hash :
-// on retombe alors sur la dernière sélection de devises connue (mémorisée
-// à chaque changement dans writeHash), plutôt que sur eur/usd/gbp par défaut.
+// on retombe alors sur la dernière config connue (mémorisée à chaque
+// changement dans writeHash), plutôt que sur eur/usd/gbp à 2 % par défaut.
 const CURR_KEY = "currencies";
+const FEE_KEY = "feePct";
+// Un taux de frais non standard voyage avec le bookmark, sous forme d'un jeton
+// suffixé de « % » (`#eur,usd,gbp,2.5%`) : aucun code de devise ne contient ce
+// caractère, la lecture reste donc sans ambiguïté quelle que soit sa position.
+// Séparateur décimal : le point, la virgule séparant déjà les jetons. Au taux
+// par défaut, le jeton est omis pour garder les URLs courtes.
+const FEE_TOKEN_RE = /^(\d+(?:\.\d+)?)\s*%$/;
+// Un « % » nu dans le hash n'est pas un échappement valide : decodeURIComponent
+// lève dessus. On décode donc jeton par jeton, en tolérant l'échec — sinon le
+// simple fait d'avoir un taux dans l'URL ferait planter tout le démarrage.
+function safeDecode(s){
+  try{ return decodeURIComponent(s); }catch(e){ return s; }
+}
 function parseHash(){
-  const raw = decodeURIComponent(location.hash.replace(/^#/,"")).trim().toLowerCase();
-  let list = raw.split(/[,+\s]+/).filter(Boolean);
-  if(!list.length){
-    try{ list = (localStorage.getItem(CURR_KEY)||"").split(",").filter(Boolean); }catch(e){}
+  const raw = location.hash.replace(/^#/,"");
+  const list = [];
+  let hashFee = null;
+  // Découpage avant décodage : un séparateur encodé (%20) reste ainsi dans son
+  // jeton, et le trim le fait disparaître.
+  for(const rawTok of raw.split(/[,+\s]+/)){
+    const tok = safeDecode(rawTok).trim().toLowerCase();
+    if(!tok) continue;
+    const m = tok.match(FEE_TOKEN_RE);
+    if(m) hashFee = clampFee(parseFloat(m[1]));
+    else list.push(tok);
   }
   if(list.length){
+    // Hash explicite : il fait foi, y compris pour dire « frais par défaut ».
     currencies = [...new Set(list)];
     base = currencies[0];
+    feePct = hashFee ?? DEFAULT_FEE_PCT;
+  }else{
+    // Pas de devise dans le hash (icône PWA) : on reprend la dernière config.
+    let storedFee = null;
+    try{
+      const stored = (localStorage.getItem(CURR_KEY)||"").split(",").filter(Boolean);
+      if(stored.length){ currencies = stored; base = currencies[0]; }
+      const f = parseFloat(localStorage.getItem(FEE_KEY));
+      if(isFinite(f)) storedFee = clampFee(f);
+    }catch(e){}
+    feePct = hashFee ?? storedFee ?? DEFAULT_FEE_PCT;
   }
   active = defaultEntry();
   committed = 0;
   justFocused = true;
 }
 function writeHash(){
-  const h = "#" + currencies.join(",");
-  if(location.hash !== h) history.replaceState(null, "", h);
-  try{ localStorage.setItem(CURR_KEY, currencies.join(",")); }catch(e){}
+  const parts = [...currencies];
+  if(feePct !== DEFAULT_FEE_PCT) parts.push(String(feePct)+"%");
+  const h = "#" + parts.join(",");
+  // Comparaison sur la forme décodée : selon le moteur, le « % » du jeton de
+  // frais peut ressortir de location.hash en %25, sans que rien n'ait changé.
+  if(safeDecode(location.hash) !== h) history.replaceState(null, "", h);
+  try{
+    localStorage.setItem(CURR_KEY, currencies.join(","));
+    localStorage.setItem(FEE_KEY, String(feePct));
+  }catch(e){}
 }
 
 /* ---------- Cache local (offline) ---------- */
@@ -398,19 +484,6 @@ function fmtBase(n){
   return new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0, maximumFractionDigits:2}).format(v);
 }
 
-/* ---------- Frais de conversion ---------- */
-// Frais bancaires prélevés dès que la devise principale est d'un côté de la
-// conversion, toujours dans le sens défavorable : on reçoit 2 % de moins en
-// devise étrangère, et une dépense étrangère coûte 2 % de plus en devise
-// principale. Un aller-retour ne retombe donc pas sur le montant de départ,
-// exactement comme avec une vraie carte. Les paires qui ne touchent pas la
-// base (ex. usd -> gbp quand la base est eur) restent au taux brut.
-const FEE = 0.02;
-const FEE_LABEL = new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(FEE*100) + " %";
-function feeApplies(fromCode, toCode){
-  return fromCode!==toCode && (fromCode===base || toCode===base);
-}
-
 /* ---------- Taux croisés (indépendants du fetch réseau, dérivés de `rates`) ---------- */
 function rateOf(code){
   return code===base ? 1 : rates[code];
@@ -420,8 +493,8 @@ function crossRate(fromCode, toCode){
   const rf = rateOf(fromCode), rt = rateOf(toCode);
   if(rf==null || rt==null) return null;
   const raw = rt / rf;
-  if(fromCode===base) return raw * (1 - FEE);  // on reçoit moins de devise étrangère
-  if(toCode===base)   return raw * (1 + FEE);  // la dépense coûte plus en devise principale
+  if(fromCode===base) return raw * (1 - feeRate());  // on reçoit moins de devise étrangère
+  if(toCode===base)   return raw * (1 + feeRate());  // la dépense coûte plus en devise principale
   return raw;
 }
 
@@ -452,7 +525,7 @@ function render(){
       </div>
       <div>
         <div class="amount">${amount}</div>
-        ${(!isActive && rate!=null) ? `<div class="sub">1 ${active.toUpperCase()} = ${fmt(rate)}${feeApplies(active,code)?` · frais ${FEE_LABEL}`:''}</div>`:''}
+        ${(!isActive && rate!=null) ? `<div class="sub">1 ${active.toUpperCase()} = ${fmt(rate)}${feeApplies(active,code)?` · frais ${feeLabel()}`:''}</div>`:''}
       </div>`;
     row.addEventListener("click", ()=>{ if(!isActive) setActive(code); });
     rowsEl.appendChild(row);
@@ -567,29 +640,59 @@ window.addEventListener("focus", onResume);
 
 /* ---------- Sheet « Gérer » ---------- */
 const sheet=document.getElementById("sheet"), sheetBg=document.getElementById("sheetBg");
-function openSheet(){ renderPicked(); renderResults(""); sheet.classList.add("open"); sheetBg.classList.add("open"); }
+const feeInput = document.getElementById("feeInput");
+function openSheet(){
+  feeInput.value = String(feePct);
+  renderPicked(); renderResults("");
+  sheet.classList.add("open"); sheetBg.classList.add("open");
+}
 function closeSheet(){
   sheet.classList.remove("open"); sheetBg.classList.remove("open");
+  feeInput.value = String(feePct); // renormalise un champ laissé vide ou hors bornes
   if(!currencies.includes(active)){ active = defaultEntry(); justFocused = true; } // filet de sécurité si la devise active a été retirée
   loadRates();
 }
+// Frais réglés en direct : les lignes derrière le panneau et le hash suivent la
+// frappe. Un champ vidé retombe sur la valeur par défaut le temps de la saisie.
+feeInput.addEventListener("input", ()=>{
+  feePct = clampFee(parseFloat(String(feeInput.value).replace(",",".")));
+  render();
+});
 document.getElementById("manageBtn").addEventListener("click", openSheet);
 document.getElementById("doneBtn").addEventListener("click", closeSheet);
 sheetBg.addEventListener("click", closeSheet);
 
+// Déplace une devise dans la liste. L'index 0 est réservé à la base (c'est le
+// contrat du hash : première devise = base), les bornes du déplacement sont
+// donc 1..dernier.
+function moveCurrency(from, to){
+  if(from<1 || from>=currencies.length) return;
+  if(to<1 || to>=currencies.length) return;
+  const [code] = currencies.splice(from, 1);
+  currencies.splice(to, 0, code);
+  renderPicked();
+}
 function renderPicked(){
   const el=document.getElementById("picked"); el.innerHTML="";
-  currencies.forEach(code=>{
+  const last = currencies.length-1;
+  currencies.forEach((code, i)=>{
     const isBase = code===base;
     const row=document.createElement("div"); row.className="pill";
+    const CODE = code.toUpperCase();
     row.innerHTML=`
+      <div class="reorder">${isBase?"":`
+        <button class="up" ${i<=1?"disabled":""} aria-label="Monter ${CODE}">▲</button>
+        <button class="down" ${i>=last?"disabled":""} aria-label="Descendre ${CODE}">▼</button>`}
+      </div>
       ${flagMarkup(code, "width:26px;height:19px")}
-      <div style="min-width:0"><div class="pcode">${code.toUpperCase()}</div><div class="pname">${names[code]||""}</div></div>
+      <div style="min-width:0"><div class="pcode">${CODE}</div><div class="pname">${names[code]||""}</div></div>
       ${isBase?'<span class="isbase">BASE</span>':'<button class="setbase">Base</button>'}
       ${isBase?'':'<button class="rm">Retirer</button>'}`;
     if(!isBase){
       row.querySelector(".setbase").addEventListener("click", ()=>{ base=code; active=code; justFocused=true; currencies=[base,...currencies.filter(c=>c!==base)]; renderPicked(); });
       row.querySelector(".rm").addEventListener("click", ()=>{ currencies=currencies.filter(c=>c!==code); renderPicked(); });
+      row.querySelector(".up").addEventListener("click", ()=>moveCurrency(i, i-1));
+      row.querySelector(".down").addEventListener("click", ()=>moveCurrency(i, i+1));
     }
     el.appendChild(row);
   });
